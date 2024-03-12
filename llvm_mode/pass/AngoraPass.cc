@@ -62,7 +62,6 @@ u32 hashName(std::string str) {
 class AngoraLLVMPass : public ModulePass {
 public:
   static char ID;
-  bool FastMode = false;
   std::string ModName;
   u32 ModId;
   u32 CidCounter;
@@ -125,7 +124,6 @@ public:
   void setInsNonSan(Instruction *v);
   Value *castArgType(IRBuilder<> &IRB, Value *V);
   void initVariables(Module &M);
-  void countEdge(Module &M, BasicBlock &BB);
   void visitCallInst(Instruction *Inst);
   void visitInvokeInst(Instruction *Inst);
   void visitCompareFunc(Instruction *Inst);
@@ -261,25 +259,6 @@ void AngoraLLVMPass::initVariables(Module &M) {
                          ConstantInt::get(Int32Ty, 0), "__angora_call_site", 0,
                          GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
-  if (FastMode) {
-    AngoraMapPtr = new GlobalVariable(M, PointerType::get(Int8Ty, 0), false,
-                                      GlobalValue::ExternalLinkage, 0,
-                                      "__angora_area_ptr");
-
-    AngoraCondId =
-        new GlobalVariable(M, Int32Ty, false, GlobalValue::ExternalLinkage, 0,
-                           "__angora_cond_cmpid");
-
-    AngoraPrevLoc =
-        new GlobalVariable(M, Int32Ty, false, GlobalValue::CommonLinkage,
-                           ConstantInt::get(Int32Ty, 0), "__angora_prev_loc", 0,
-                           GlobalVariable::GeneralDynamicTLSModel, 0, false);
-    GET_OR_INSERT_FUNCTION(TraceCmp, Int32Ty, "__angora_trace_cmp",
-                           {Int32Ty, Int32Ty, Int32Ty, Int64Ty, Int64Ty});
-    GET_OR_INSERT_FUNCTION(TraceSw, Int64Ty, "__angora_trace_switch",
-                           {Int32Ty, Int32Ty, Int64Ty});
-
-  } else if (TrackMode) {
     GET_OR_INSERT_FUNCTION(
         TraceCmpTT, VoidTy, "__angora_trace_cmp_tt",
         {Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int64Ty, Int64Ty, Int32Ty})
@@ -291,7 +270,6 @@ void AngoraLLVMPass::initVariables(Module &M) {
     GET_OR_INSERT_FUNCTION(TraceExploitTT, VoidTy,
                            "__angora_trace_exploit_val_tt",
                            {Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int64Ty})
-  }
 
   std::vector<std::string> AllABIListFiles;
   AllABIListFiles.insert(AllABIListFiles.end(), ClABIListFiles.begin(),
@@ -334,84 +312,6 @@ void AngoraLLVMPass::initVariables(Module &M) {
   if (output_cond_loc) {
     errs() << "Output cond log\n";
   }
-};
-
-// Coverage statistics: AFL's Branch count
-// Angora enable function-call context.
-void AngoraLLVMPass::countEdge(Module &M, BasicBlock &BB) {
-  if (!FastMode || skipBasicBlock())
-    return;
-
-  // LLVMContext &C = M.getContext();
-  unsigned int cur_loc = getRandomBasicBlockId();
-  ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
-
-  BasicBlock::iterator IP = BB.getFirstInsertionPt();
-  IRBuilder<> IRB(&(*IP));
-
-  LoadInst *PrevLoc = IRB.CreateLoad(AngoraPrevLoc);
-  setInsNonSan(PrevLoc);
-
-  Value *PrevLocCasted = IRB.CreateZExt(PrevLoc, Int32Ty);
-  setValueNonSan(PrevLocCasted);
-
-  // Get Map[idx]
-  LoadInst *MapPtr = IRB.CreateLoad(AngoraMapPtr);
-  setInsNonSan(MapPtr);
-
-  Value *BrId = IRB.CreateXor(PrevLocCasted, CurLoc);
-  setValueNonSan(BrId);
-  Value *MapPtrIdx = IRB.CreateGEP(MapPtr, BrId);
-  setValueNonSan(MapPtrIdx);
-
-  // Increase 1 : IncRet <- Map[idx] + 1
-  LoadInst *Counter = IRB.CreateLoad(MapPtrIdx);
-  setInsNonSan(Counter);
-
-  // Implementation of saturating counter.
-  // Value *CmpOF = IRB.CreateICmpNE(Counter, ConstantInt::get(Int8Ty, -1));
-  // setValueNonSan(CmpOF);
-  // Value *IncVal = IRB.CreateZExt(CmpOF, Int8Ty);
-  // setValueNonSan(IncVal);
-  // Value *IncRet = IRB.CreateAdd(Counter, IncVal);
-  // setValueNonSan(IncRet);
-
-  // Implementation of Never-zero counter
-  // The idea is from Marc and Heiko in AFLPlusPlus
-  // Reference: :
-  // https://github.com/vanhauser-thc/AFLplusplus/blob/master/llvm_mode/README.neverzero
-  // and https://github.com/vanhauser-thc/AFLplusplus/issues/10
-
-  Value *IncRet = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 1));
-  setValueNonSan(IncRet);
-  Value *IsZero = IRB.CreateICmpEQ(IncRet, ConstantInt::get(Int8Ty, 0));
-  setValueNonSan(IsZero);
-  Value *IncVal = IRB.CreateZExt(IsZero, Int8Ty);
-  setValueNonSan(IncVal);
-  IncRet = IRB.CreateAdd(IncRet, IncVal);
-  setValueNonSan(IncRet);
-
-  // Store Back Map[idx]
-  IRB.CreateStore(IncRet, MapPtrIdx)->setMetadata(NoSanMetaId, NoneMetaNode);
-
-  Value *NewPrevLoc = NULL;
-  if (num_fn_ctx != 0) { // Call-based context
-    // Load ctx
-    LoadInst *CtxVal = IRB.CreateLoad(AngoraContext);
-    setInsNonSan(CtxVal);
-
-    Value *CtxValCasted = IRB.CreateZExt(CtxVal, Int32Ty);
-    setValueNonSan(CtxValCasted);
-    // Udate PrevLoc
-    NewPrevLoc =
-        IRB.CreateXor(CtxValCasted, ConstantInt::get(Int32Ty, cur_loc >> 1));
-  } else { // disable context
-    NewPrevLoc = ConstantInt::get(Int32Ty, cur_loc >> 1);
-  }
-  setValueNonSan(NewPrevLoc);
-
-  StoreInst *Store = IRB.CreateStore(NewPrevLoc, AngoraPrevLoc);
-  setInsNonSan(Store);
 };
 
 void AngoraLLVMPass::addFnWrap(Function &F) {
@@ -590,38 +490,6 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
 
   IRBuilder<> IRB(InsertPoint);
 
-  if (FastMode) {
-    /*
-    OpArg[0] = castArgType(IRB, OpArg[0]);
-    OpArg[1] = castArgType(IRB, OpArg[1]);
-    Value *CondExt = IRB.CreateZExt(Cond, Int32Ty);
-    setValueNonSan(CondExt);
-    LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
-    setInsNonSan(CurCtx);
-    CallInst *ProxyCall =
-        IRB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
-    setInsNonSan(ProxyCall);
-    */
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
-    setInsNonSan(CurCid);
-    Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
-    setValueNonSan(CmpEq);
-
-    BranchInst *BI = cast<BranchInst>(
-        SplitBlockAndInsertIfThen(CmpEq, InsertPoint, false, ColdCallWeights));
-    setInsNonSan(BI);
-
-    IRBuilder<> ThenB(BI);
-    OpArg[0] = castArgType(ThenB, OpArg[0]);
-    OpArg[1] = castArgType(ThenB, OpArg[1]);
-    Value *CondExt = ThenB.CreateZExt(Cond, Int32Ty);
-    setValueNonSan(CondExt);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
-    setInsNonSan(CurCtx);
-    CallInst *ProxyCall =
-        ThenB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
-    setInsNonSan(ProxyCall);
-  } else if (TrackMode) {
     Value *SizeArg = ConstantInt::get(Int32Ty, num_bytes);
     u32 predicate = Cmp->getPredicate();
     if (ConstantInt *CInt = dyn_cast<ConstantInt>(OpArg[1])) {
@@ -640,7 +508,7 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
                                     OpArg[1], CondExt});
     setInsNonSan(ProxyCall);
-  }
+
 }
 
 void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
@@ -651,25 +519,7 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
   Value *OpArg[2];
   OpArg[1] = ConstantInt::get(Int64Ty, 1);
   IRBuilder<> IRB(InsertPoint);
-  if (FastMode) {
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
-    setInsNonSan(CurCid);
-    Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
-    setValueNonSan(CmpEq);
-    BranchInst *BI = cast<BranchInst>(
-        SplitBlockAndInsertIfThen(CmpEq, InsertPoint, false, ColdCallWeights));
-    setInsNonSan(BI);
-    IRBuilder<> ThenB(BI);
-    Value *CondExt = ThenB.CreateZExt(Cond, Int32Ty);
-    setValueNonSan(CondExt);
-    OpArg[0] = ThenB.CreateZExt(CondExt, Int64Ty);
-    setValueNonSan(OpArg[0]);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
-    setInsNonSan(CurCtx);
-    CallInst *ProxyCall =
-        ThenB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
-    setInsNonSan(ProxyCall);
-  } else if (TrackMode) {
+
     Value *SizeArg = ConstantInt::get(Int32Ty, 1);
     Value *TypeArg = ConstantInt::get(Int32Ty, COND_EQ_OP | COND_BOOL_MASK);
     Value *CondExt = IRB.CreateZExt(Cond, Int32Ty);
@@ -682,7 +532,7 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
                                     OpArg[1], CondExt});
     setInsNonSan(ProxyCall);
-  }
+  
 }
 
 void AngoraLLVMPass::visitCmpInst(Instruction *Inst) {
@@ -724,22 +574,6 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
   Constant *Cid = ConstantInt::get(Int32Ty, getInstructionId(Inst));
   IRBuilder<> IRB(Sw);
 
-  if (FastMode) {
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
-    setInsNonSan(CurCid);
-    Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
-    setValueNonSan(CmpEq);
-    BranchInst *BI = cast<BranchInst>(
-        SplitBlockAndInsertIfThen(CmpEq, Sw, false, ColdCallWeights));
-    setInsNonSan(BI);
-    IRBuilder<> ThenB(BI);
-    Value *CondExt = ThenB.CreateZExt(Cond, Int64Ty);
-    setValueNonSan(CondExt);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
-    setInsNonSan(CurCtx);
-    CallInst *ProxyCall = ThenB.CreateCall(TraceSw, {Cid, CurCtx, CondExt});
-    setInsNonSan(ProxyCall);
-  } else if (TrackMode) {
     Value *SizeArg = ConstantInt::get(Int32Ty, num_bytes);
     SmallVector<Constant *, 16> ArgList;
     for (auto It : Sw->cases()) {
@@ -764,7 +598,6 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
     CallInst *ProxyCall = IRB.CreateCall(
         TraceSwTT, {Cid, CurCtx, SizeArg, CondExt, SwNum, ArrPtr});
     setInsNonSan(ProxyCall);
-  }
 }
 
 void AngoraLLVMPass::visitExploitation(Instruction *Inst) {
@@ -824,9 +657,6 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
     OKF("Track Mode.");
   } else if (DFSanMode) {
     OKF("DFSan Mode.");
-  } else {
-    FastMode = true;
-    OKF("Fast Mode.");
   }
 
   initVariables(M);
@@ -857,9 +687,6 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         Instruction *Inst = *inst;
         if (Inst->getMetadata(NoSanMetaId))
           continue;
-        if (Inst == &(*BB->getFirstInsertionPt())) {
-          countEdge(M, *BB);
-        }
         if (isa<CallInst>(Inst)) {
           visitCallInst(Inst);
         } else if (isa<InvokeInst>(Inst)) {

@@ -6,7 +6,7 @@
 #endif
 #define MAP_SIZE (1 << MAP_SIZE_POW2)
 #define ENABLE_UNFOLD_BRANCH 1
-// #define DEBUG_INFO
+#define DEBUG_INFO
 // #define ALLOC_PRELOAD
 
 // Without taint tracking

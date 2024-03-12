@@ -370,6 +370,7 @@ char *__dfsw_fgets(char *str, int count, FILE *fd, dfsan_label str_label,
 #ifdef DEBUG_INFO
   fprintf(stderr, "fgets %p, range is %ld, %ld \n", fd, offset, strlen(ret));
 #endif
+  fprintf(stderr, "fgets %p, range is %ld, %ld \n", fd, offset, strlen(ret));
   if (ret && is_fuzzing_ffd(fd)) {
     int len = strlen(ret); // + 1?
     assign_taint_labels_exf(str, offset, len, count, 1);

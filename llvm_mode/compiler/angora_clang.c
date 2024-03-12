@@ -34,7 +34,6 @@
 static u8 *obj_path;       /* Path to runtime libraries         */
 static u8 **cc_params;     /* Parameters passed to the real CC  */
 static u32 cc_par_cnt = 1; /* Param count, including argv0      */
-static u8 clang_type = CLANG_FAST_TYPE;
 static u8 is_cxx = 0;
 
 /* Try to find the runtime libraries. If that fails, abort. */
@@ -64,19 +63,6 @@ static void find_obj(u8 *argv0) {
 }
 
 static void check_type(char *name) {
-  u8 *use_fast = getenv("USE_FAST");
-  u8 *use_dfsan = getenv("USE_DFSAN");
-  u8 *use_track = getenv("USE_TRACK");
-  u8 *use_pin = getenv("USE_PIN");
-  if (use_fast) {
-    clang_type = CLANG_FAST_TYPE;
-  } else if (use_dfsan) {
-    clang_type = CLANG_DFSAN_TYPE;
-  } else if (use_track) {
-    clang_type = CLANG_TRACK_TYPE;
-  } else if (use_pin) {
-    clang_type = CLANG_PIN_TYPE;
-  }
   if (!strcmp(name, "angora-clang++")) {
     is_cxx = 1;
   }
@@ -98,26 +84,19 @@ static u8 check_if_assembler(u32 argc, const char **argv) {
 }
 
 static void add_angora_pass() {
-  if (clang_type != CLANG_DFSAN_TYPE) {
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] =
         alloc_printf("%s/pass/libUnfoldBranchPass.so", obj_path);
-  }
 
   cc_params[cc_par_cnt++] = "-Xclang";
   cc_params[cc_par_cnt++] = "-load";
   cc_params[cc_par_cnt++] = "-Xclang";
   cc_params[cc_par_cnt++] = alloc_printf("%s/pass/libAngoraPass.so", obj_path);
 
-  if (clang_type == CLANG_DFSAN_TYPE) {
-    cc_params[cc_par_cnt++] = "-mllvm";
-    cc_params[cc_par_cnt++] = "-DFSanMode";
-  } else if (clang_type == CLANG_TRACK_TYPE || clang_type == CLANG_PIN_TYPE) {
     cc_params[cc_par_cnt++] = "-mllvm";
     cc_params[cc_par_cnt++] = "-TrackMode";
-  }
 
   cc_params[cc_par_cnt++] = "-mllvm";
   cc_params[cc_par_cnt++] = alloc_printf(
@@ -140,10 +119,6 @@ static void add_angora_pass() {
 
 static void add_angora_runtime() {
   // cc_params[cc_par_cnt++] = "-I/${HOME}/clang+llvm/include/c++/v1";
-  if (clang_type == CLANG_FAST_TYPE) {
-    cc_params[cc_par_cnt++] =
-        alloc_printf("%s/lib/libruntime_fast.a", obj_path);
-  } else if (clang_type == CLANG_TRACK_TYPE || clang_type == CLANG_DFSAN_TYPE) {
     cc_params[cc_par_cnt++] = "-Wl,--whole-archive";
     cc_params[cc_par_cnt++] =
         alloc_printf("%s/lib/libdfsan_rt-x86_64.a", obj_path);
@@ -157,16 +132,11 @@ static void add_angora_runtime() {
     if (rule_obj) {
       cc_params[cc_par_cnt++] = rule_obj;
     }
-  } else if (clang_type == CLANG_PIN_TYPE) {
-    cc_params[cc_par_cnt++] = alloc_printf("%s/lib/pin_stub.o", obj_path);
-  }
 
-  if (clang_type != CLANG_FAST_TYPE) {
     // cc_params[cc_par_cnt++] = "-pthread";
     if (!is_cxx)
       cc_params[cc_par_cnt++] = "-lstdc++";
     cc_params[cc_par_cnt++] = "-lrt";
-  }
 
   cc_params[cc_par_cnt++] = "-Wl,--no-as-needed";
   cc_params[cc_par_cnt++] = "-Wl,--gc-sections"; // if darwin -Wl, -dead_strip
@@ -176,7 +146,6 @@ static void add_angora_runtime() {
 }
 
 static void add_dfsan_pass() {
-  if (clang_type == CLANG_TRACK_TYPE || clang_type == CLANG_DFSAN_TYPE) {
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
     cc_params[cc_par_cnt++] = "-Xclang";
@@ -193,7 +162,6 @@ static void add_dfsan_pass() {
       cc_params[cc_par_cnt++] =
           alloc_printf("-angora-dfsan-abilist2=%s", rule_list);
     }
-  }
 }
 
 static void edit_params(u32 argc, char **argv) {
@@ -283,31 +251,6 @@ static void edit_params(u32 argc, char **argv) {
       cc_params[cc_par_cnt++] = "-D_FORTIFY_SOURCE=2";
   }
 
-  if (!asan_set && clang_type == CLANG_FAST_TYPE) {
-    // We did not test Angora on asan and msan..
-    if (getenv("ANGORA_USE_ASAN")) {
-
-      if (getenv("ANGORA_USE_MSAN"))
-        FATAL("ASAN and MSAN are mutually exclusive");
-
-      if (getenv("ANGORA_HARDEN"))
-        FATAL("ASAN and ANGORA_HARDEN are mutually exclusive");
-
-      cc_params[cc_par_cnt++] = "-U_FORTIFY_SOURCE";
-      cc_params[cc_par_cnt++] = "-fsanitize=address";
-
-    } else if (getenv("ANGORA_USE_MSAN")) {
-
-      if (getenv("ANGORA_USE_ASAN"))
-        FATAL("ASAN and MSAN are mutually exclusive");
-
-      if (getenv("ANGORA_HARDEN"))
-        FATAL("MSAN and ANGORA_HARDEN are mutually exclusive");
-
-      cc_params[cc_par_cnt++] = "-U_FORTIFY_SOURCE";
-      cc_params[cc_par_cnt++] = "-fsanitize=memory";
-    }
-  }
 
   if (!getenv("ANGORA_DONT_OPTIMIZE")) {
     cc_params[cc_par_cnt++] = "-g";
@@ -370,14 +313,6 @@ static void edit_params(u32 argc, char **argv) {
     cc_params[cc_par_cnt++] = (const char *)"-stdlib=libc++";
     // FIXME: or use the same header
     // cc_params[cc_par_cnt++] = (u8*)"-I/path-to-llvm/include/c++/v1";
-    if (clang_type == CLANG_FAST_TYPE) {
-      cc_params[cc_par_cnt++] = alloc_printf("-L%s/lib/libcxx_fast/", obj_path);
-      cc_params[cc_par_cnt++] = (const char *)"-lc++fast";
-      cc_params[cc_par_cnt++] = (const char *)"-Wl,--start-group";
-      cc_params[cc_par_cnt++] = (const char *)"-lc++abifast";
-      cc_params[cc_par_cnt++] = (const char *)"-lc++abi";
-      cc_params[cc_par_cnt++] = (const char *)"-Wl,--end-group";
-    } else if (clang_type == CLANG_TRACK_TYPE) {
       cc_params[cc_par_cnt++] =
           alloc_printf("-L%s/lib/libcxx_track/", obj_path);
       cc_params[cc_par_cnt++] = (const char *)"-lc++";
@@ -386,7 +321,6 @@ static void edit_params(u32 argc, char **argv) {
       cc_params[cc_par_cnt++] = (const char *)"-lc++abitrack";
       cc_params[cc_par_cnt++] = (const char *)"-lc++abi";
       cc_params[cc_par_cnt++] = (const char *)"-Wl,--end-group";
-    }
   }
 
   if (maybe_linking) {
