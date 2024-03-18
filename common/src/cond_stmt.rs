@@ -1,5 +1,9 @@
-use super::CondState;
-use angora_common::{cond_stmt_base::CondStmtBase, defs, tag::TagSeg};
+use crate::cond_state::CondState;
+use crate::cond_stmt_base::CondStmtBase;
+use crate::defs::*;
+use crate::{tag::TagSeg};
+// use angora_common::{cond_stmt_base::CondStmtBase, defs, tag::TagSeg};
+
 use serde_derive::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -64,11 +68,11 @@ impl CondStmt {
     }
 
     pub fn is_bool(&self) -> bool {
-        (self.base.may_be_bool() && !self.is_desirable) || (self.base.op & defs::COND_BOOL_MASK) > 0
+        (self.base.may_be_bool() && !self.is_desirable) || (self.base.op & COND_BOOL_MASK) > 0
     }
 
     pub fn mark_as_done(&mut self) {
-        self.base.condition = defs::COND_DONE_ST;
+        self.base.condition = COND_DONE_ST;
         self.clear();
     }
 
@@ -89,7 +93,7 @@ impl CondStmt {
     pub fn get_afl_cond(id: usize, speed: u32, edge_num: usize) -> Self {
         let mut afl_cond = Self::new();
         afl_cond.speed = speed;
-        afl_cond.base.op = defs::COND_AFL_OP;
+        afl_cond.base.op = COND_AFL_OP;
         afl_cond.base.cmpid = id as u32;
         afl_cond.base.context = 0;
         afl_cond.base.order = 0;

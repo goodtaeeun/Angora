@@ -1,5 +1,6 @@
-use crate::{cond_stmt::CondStmt, mut_input::offsets::*};
-use angora_common::{config, defs};
+use crate::{cond_stmt::CondStmt, mut_input::*};
+use crate::defs::*;
+use crate::config::*;
 use serde_derive::{Deserialize, Serialize};
 use std;
 
@@ -25,7 +26,7 @@ impl Default for CondState {
 impl CondStmt {
     pub fn is_time_expired(&self) -> bool {
         ((self.state.is_det() || self.state.is_one_byte()) && !self.is_first_time())
-            || self.fuzz_times >= config::LONG_FUZZ_TIME
+            || self.fuzz_times >= LONG_FUZZ_TIME
     }
 }
 
@@ -119,18 +120,18 @@ impl NextState for CondStmt {
     }
 
     fn to_offsets_all_end(&mut self) {
-        debug!("to_all_end");
+        // debug!("to_all_end");
         self.state = CondState::OffsetAllEnd;
     }
 
     fn to_unsolvable(&mut self) {
-        debug!("to unsovable");
+        // debug!("to unsovable");
         self.state = CondState::Unsolvable;
     }
 
     fn to_timeout(&mut self) {
-        debug!("to timeout");
-        self.speed = defs::SLOW_SPEED;
+        // debug!("to timeout");
+        self.speed = SLOW_SPEED;
         self.state = CondState::Timeout;
     }
 }

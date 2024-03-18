@@ -4,6 +4,8 @@ use angora_common::{cond_stmt_base::*, defs};
 use lazy_static::lazy_static;
 use libc;
 use std::{slice, sync::Mutex};
+use std::io::Write;
+use std::process;
 
 // use shm_conds;
 lazy_static! {
@@ -56,7 +58,7 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
     l5: DfsanLabel,
     _l6: DfsanLabel,
 ) {
-    //println!("[CMP] id: {}, ctx: {}", cmpid, get_context());
+    // eprintln!("__dfsw___angora_trace_cmp_tt: [CMP] id: {}, ctx: {}", cmpid, get_context());
     // ret_label: *mut DfsanLabel
     let lb1 = l4;
     let lb2 = l5;
@@ -67,7 +69,9 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
     let op = infer_eq_sign(op, lb1, lb2);
     infer_shape(lb1, size);
     infer_shape(lb2, size);
-
+    println!("@@@@@@@@@ __dfsw___angora_trace_cmp_tt is called\n");
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
     log_cmp(cmpid, context, condition, op, size, lb1, lb2, arg1, arg2);
 }
 
@@ -139,6 +143,9 @@ pub extern "C" fn __dfsw___angora_trace_switch_tt(
             lc.save(cond_i);
         }
     }
+    println!("@@@@@@@@@ __dfsw___angora_trace_switch_tt is called\n");
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
 }
 
 #[no_mangle]
@@ -202,6 +209,9 @@ pub extern "C" fn __dfsw___angora_trace_fn_tt(
         lc.save(cond);
         lc.save_magic_bytes((arg1, arg2));
     }
+    println!("@@@@@@@@@ __dfsw___angora_trace_fn_tt is called\n");
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
 }
 
 #[no_mangle]
@@ -228,6 +238,9 @@ pub extern "C" fn __dfsw___angora_trace_exploit_val_tt(
     }
 
     log_cmp(cmpid, context, defs::COND_FALSE_ST, op, size, lb, 0, val, 0);
+    println!("@@@@@@@@@ __dfsw___angora_trace_exploit_val_tt is called\n");
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
 }
 
 #[inline]
@@ -256,10 +269,14 @@ fn log_cmp(
         arg1,
         arg2,
     };
+    println!("@@@@@@@@@ log_cmp is called\n");
     let mut lcl = LC.lock().expect("Could not lock LC.");
+    println!("@@@@@@@@@ lcl is locked\n");
     if let Some(ref mut lc) = *lcl {
         lc.save(cond);
     }
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
 }
 
 #[no_mangle]
