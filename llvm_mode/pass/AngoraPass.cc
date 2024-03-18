@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+#include <iostream>
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
@@ -99,6 +99,7 @@ public:
   FunctionCallee TraceCmp;
   FunctionCallee TraceSw;
   FunctionCallee TraceCmpTT;
+  FunctionCallee TraceTargetTT;
   FunctionCallee TraceSwTT;
   FunctionCallee TraceFnTT;
   FunctionCallee TraceExploitTT;
@@ -130,6 +131,8 @@ public:
   void visitBranchInst(Instruction *Inst);
   void visitCmpInst(Instruction *Inst);
   void processCmp(Instruction *Cond, Constant *Cid, Instruction *InsertPoint);
+  void visitTargetInst(Instruction *Inst, std::string location_str);
+  void processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str);
   void processBoolCmp(Value *Cond, Constant *Cid, Instruction *InsertPoint);
   void visitSwitchInst(Module &M, Instruction *Inst);
   void visitExploitation(Instruction *Inst);
@@ -262,6 +265,9 @@ void AngoraLLVMPass::initVariables(Module &M) {
     GET_OR_INSERT_FUNCTION(
         TraceCmpTT, VoidTy, "__angora_trace_cmp_tt",
         {Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int64Ty, Int64Ty, Int32Ty})
+    GET_OR_INSERT_FUNCTION(
+        TraceTargetTT, VoidTy, "__angora_trace_target_tt",
+        {Int64Ty, Int64Ty, Int8PtrTy})
     GET_OR_INSERT_FUNCTION(
         TraceSwTT, VoidTy, "__angora_trace_switch_tt",
         {Int32Ty, Int32Ty, Int32Ty, Int64Ty, Int32Ty, Int64PtrTy})
@@ -543,6 +549,35 @@ void AngoraLLVMPass::visitCmpInst(Instruction *Inst) {
   processCmp(Inst, Cid, InsertPoint);
 }
 
+void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
+  // CmpInst *Cmp = dyn_cast<CmpInst>(Inst);
+  Value *OpArg[2];
+  OpArg[0] = Inst->getOperand(0);
+  OpArg[1] = Inst->getOperand(1);
+
+  IRBuilder<> IRB(InsertPoint);
+
+
+  OpArg[0] = castArgType(IRB, OpArg[0]);
+  OpArg[1] = castArgType(IRB, OpArg[1]);
+  Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
+  CallInst *ProxyCall =
+      IRB.CreateCall(TraceTargetTT, {OpArg[0],
+                                  OpArg[1], Str});
+  std::cout << "@@@ processCmp: Insert call to TraceTargetTT"  << std::endl;
+  std::cout << "@@@ The location string is: " << location_str << std::endl;
+  setInsNonSan(ProxyCall);
+
+}
+
+void AngoraLLVMPass::visitTargetInst(Instruction *Inst, std::string location_str) {
+  Instruction *InsertPoint = Inst->getNextNode();
+  if (!InsertPoint || isa<ConstantInt>(Inst))
+    return;
+  // Constant *Cid = ConstantInt::get(Int32Ty, getInstructionId(Inst));
+  processTarget(Inst, InsertPoint, location_str);
+}
+
 void AngoraLLVMPass::visitBranchInst(Instruction *Inst) {
   BranchInst *Br = dyn_cast<BranchInst>(Inst);
   if (Br->isConditional()) {
@@ -668,6 +703,17 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
     if (F.isDeclaration() || F.getName().startswith(StringRef("asan.module")))
       continue;
 
+    // get file name from function.
+    std::string file_name;
+    if (auto *SP = F.getSubprogram()) {
+        file_name = SP->getFilename().str();
+    }
+    // Keep only the file name.
+    std::size_t tokloc = file_name.find_last_of('/');
+    if (tokloc != std::string::npos) {
+      file_name = file_name.substr(tokloc + 1, std::string::npos);
+    }
+
     addFnWrap(F);
 
     std::vector<BasicBlock *> bb_list;
@@ -682,24 +728,50 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         Instruction *Inst = &(*inst);
         inst_list.push_back(Inst);
       }
-
+      std::cout << "For all instructions" << std::endl;
       for (auto inst = inst_list.begin(); inst != inst_list.end(); inst++) {
         Instruction *Inst = *inst;
-        if (Inst->getMetadata(NoSanMetaId))
-          continue;
-        if (isa<CallInst>(Inst)) {
-          visitCallInst(Inst);
-        } else if (isa<InvokeInst>(Inst)) {
-          visitInvokeInst(Inst);
-        } else if (isa<BranchInst>(Inst)) {
-          visitBranchInst(Inst);
-        } else if (isa<SwitchInst>(Inst)) {
-          visitSwitchInst(M, Inst);
-        } else if (isa<CmpInst>(Inst)) {
-          visitCmpInst(Inst);
-        } else {
-          visitExploitation(Inst);
+        // Get the line number of the instruction.
+        DebugLoc dbg = (*inst)->getDebugLoc();
+        DILocation* DILoc = dbg.get();
+        if (!DILoc || !DILoc->getLine()) 
+          continue; 
+        std::string line_str = std::to_string(DILoc->getLine());
+        std::string location_str = file_name + std::string(":") + line_str;
+        std::cout << "Current Instruction is: " << location_str << std::endl;
+
+        std::string target_str = "stdin.c:21";
+        
+        if(location_str.compare(target_str) == 0) {
+          std::cout << "Found the target instruction" << std::endl;
+          visitTargetInst(Inst, location_str);
+          // if (isa<CmpInst>(Inst)) {
+          //   visitTargetInst(Inst, location_str);
+          //   std::cout << "Visit target inst only if it is cmp" << std::endl;
+          // }
         }
+
+        // if (Inst->getMetadata(NoSanMetaId))
+        //   continue;
+        // if (isa<CallInst>(Inst)) {
+        //   visitCallInst(Inst);
+        //   std::cout << "Visit Call inst" << std::endl;
+        // } else if (isa<InvokeInst>(Inst)) {
+        //   visitInvokeInst(Inst);
+        //   std::cout << "Visit Invoke inst" << std::endl;
+        // } else if (isa<BranchInst>(Inst)) {
+        //   visitBranchInst(Inst);
+        //   std::cout << "Visit Branch inst" << std::endl;
+        // } else if (isa<SwitchInst>(Inst)) {
+        //   visitSwitchInst(M, Inst);
+        //   std::cout << "Visit Switch inst" << std::endl;
+        // } else if (isa<CmpInst>(Inst)) {
+        //   visitCmpInst(Inst, location_str);
+        //   std::cout << "Visit Cmp inst" << std::endl;
+        // } else {
+        //   visitExploitation(Inst);
+        //   std::cout << "Visit Exploitation" << std::endl;
+        // }
       }
     }
   }

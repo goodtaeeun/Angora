@@ -7,7 +7,7 @@ pub mod tag_set_wrap;
 pub mod track;
 
 use crate::logger::Logger;
-pub use crate::{logger::get_log_data, tag_set::TagSet};
+pub use crate::{tag_set::TagSet};
 
 pub type DfsanLabel = u32;
 extern "C" {

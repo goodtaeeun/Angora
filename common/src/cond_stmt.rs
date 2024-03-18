@@ -7,7 +7,7 @@ use crate::{tag::TagSeg};
 use serde_derive::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone)]
 pub struct CondStmt {
     pub base: CondStmtBase,
     pub offsets: Vec<TagSeg>,

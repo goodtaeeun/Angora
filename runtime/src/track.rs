@@ -6,6 +6,8 @@ use libc;
 use std::{slice, sync::Mutex};
 use std::io::Write;
 use std::process;
+use std::ffi::CStr;
+use std::str;
 
 // use shm_conds;
 lazy_static! {
@@ -37,6 +39,7 @@ pub extern "C" fn __angora_trace_cmp_tt(
     _e: u64,
     _f: u64,
     _g: u32,
+    _h: *mut i8
 ) {
     panic!("Forbid calling __angora_trace_cmp_tt directly");
 }
@@ -69,10 +72,11 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
     let op = infer_eq_sign(op, lb1, lb2);
     infer_shape(lb1, size);
     infer_shape(lb2, size);
-    println!("@@@@@@@@@ __dfsw___angora_trace_cmp_tt is called\n");
+    let dummy_str = String::from("");
+    println!("@@@@@@@@@ __dfsw___angora_trace_cmp_tt is called");
     std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
-    log_cmp(cmpid, context, condition, op, size, lb1, lb2, arg1, arg2);
+    log_cmp(cmpid, context, condition, op, size, lb1, lb2, arg1, arg2, dummy_str);
 }
 
 #[no_mangle]
@@ -127,6 +131,8 @@ pub extern "C" fn __dfsw___angora_trace_switch_tt(
         lb2: 0,
         arg1: condition,
         arg2: 0,
+        loc_string: String::from(""),
+        offsets: vec![]
     };
 
     let sw_args = unsafe { slice::from_raw_parts(args, num as usize) };
@@ -143,7 +149,7 @@ pub extern "C" fn __dfsw___angora_trace_switch_tt(
             lc.save(cond_i);
         }
     }
-    println!("@@@@@@@@@ __dfsw___angora_trace_switch_tt is called\n");
+    println!("@@@@@@@@@ __dfsw___angora_trace_switch_tt is called");
     std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
@@ -195,6 +201,8 @@ pub extern "C" fn __dfsw___angora_trace_fn_tt(
         lb2: 0,
         arg1: 0,
         arg2: 0,
+        loc_string: String::from(""),
+        offsets: vec![]
     };
 
     if lb1 > 0 {
@@ -209,7 +217,7 @@ pub extern "C" fn __dfsw___angora_trace_fn_tt(
         lc.save(cond);
         lc.save_magic_bytes((arg1, arg2));
     }
-    println!("@@@@@@@@@ __dfsw___angora_trace_fn_tt is called\n");
+    println!("@@@@@@@@@ __dfsw___angora_trace_fn_tt is called");
     std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
@@ -237,10 +245,48 @@ pub extern "C" fn __dfsw___angora_trace_exploit_val_tt(
         return;
     }
 
-    log_cmp(cmpid, context, defs::COND_FALSE_ST, op, size, lb, 0, val, 0);
-    println!("@@@@@@@@@ __dfsw___angora_trace_exploit_val_tt is called\n");
+    let dummy_str = String::from("");
+    log_cmp(cmpid, context, defs::COND_FALSE_ST, op, size, lb, 0, val, 0, dummy_str);
+    println!("@@@@@@@@@ __dfsw___angora_trace_exploit_val_tt is called");
     std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
+}
+
+
+#[no_mangle]
+pub extern "C" fn __angora_trace_target_tt(
+    _e: u64,
+    _f: u64,
+    _h: *mut i8
+) {
+    panic!("Forbid calling __angora_trace_target_tt directly");
+}
+
+#[no_mangle]
+pub extern "C" fn __dfsw___angora_trace_target_tt(
+    arg1: u64,
+    arg2: u64,
+    loc_string : *mut i8,
+    _l0: DfsanLabel,
+    _l1: DfsanLabel,
+    _l2: DfsanLabel,
+) {
+    // eprintln!("__dfsw___angora_trace_cmp_tt: [CMP] id: {}, ctx: {}", cmpid, get_context());
+    // ret_label: *mut DfsanLabel
+    let lb1 = _l0;
+    let lb2 = _l1;
+    if lb1 == 0 && lb2 == 0 {
+        return;
+    }
+
+    println!("@@@@@@@@@ __dfsw__angora_trace_target_tt is called");
+    let cstr = unsafe { CStr::from_ptr(loc_string) };
+    let str_slice= cstr.to_str().expect("Failed to convert to &str");
+    let str_to_save = str_slice.to_string();
+    println!("The location is {}", str_slice);
+    std::io::stdout().flush().expect("Failed to flush stdout");
+    // process::exit(0);
+    log_cmp(0, 0, 0, 0, 0, lb1, lb2, 0, 0,str_to_save);
 }
 
 #[inline]
@@ -254,6 +300,7 @@ fn log_cmp(
     lb2: u32,
     arg1: u64,
     arg2: u64,
+    loc_string: String
 ) {
     let cond = CondStmtBase {
         cmpid,
@@ -268,10 +315,12 @@ fn log_cmp(
         lb2,
         arg1,
         arg2,
+        loc_string,
+        offsets: vec![]
     };
-    println!("@@@@@@@@@ log_cmp is called\n");
+    println!("@@@@@@@@@ log_cmp is called");
     let mut lcl = LC.lock().expect("Could not lock LC.");
-    println!("@@@@@@@@@ lcl is locked\n");
+    println!("@@@@@@@@@ lcl is locked");
     if let Some(ref mut lc) = *lcl {
         lc.save(cond);
     }

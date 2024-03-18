@@ -4,7 +4,7 @@ use crate::config::*;
 use serde_derive::{Deserialize, Serialize};
 use std;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CondState {
     Offset,
     OffsetOpt,

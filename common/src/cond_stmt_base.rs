@@ -1,8 +1,8 @@
 use crate::defs::*;
 use serde_derive::{Deserialize, Serialize};
+use crate::{tag::TagSeg};
 
-#[derive(Debug, Clone, Default, Copy, Serialize, Deserialize)]
-#[repr(C)] // It should be repr C since we will used it in shared memory
+#[derive(Debug, Clone, Default)]
 pub struct CondStmtBase {
     pub cmpid: u32,
     pub context: u32,
@@ -19,6 +19,9 @@ pub struct CondStmtBase {
 
     pub arg1: u64,
     pub arg2: u64,
+    // The string that contains the location
+    pub loc_string: String,
+    pub offsets: Vec<TagSeg>,
 }
 
 /*

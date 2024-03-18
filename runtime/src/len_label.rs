@@ -50,32 +50,32 @@ pub extern "C" fn __angora_get_len_label(offset: u32, size: u32) -> DfsanLabel {
     get_fat_label(0, len_lb)
 }
 
-pub fn get_len_cond(cond: &mut CondStmtBase) -> Option<CondStmtBase> {
-    let len_lb;
-    if is_len_label(cond.lb1) {
-        len_lb = get_len_label(cond.lb1);
-        cond.lb1 = get_normal_label(cond.lb1);
-    } else if is_len_label(cond.lb2) {
-        len_lb = get_len_label(cond.lb2);
-        cond.lb2 = get_normal_label(cond.lb2);
-    } else {
-        return None;
-    }
-    if len_lb > MAX_LEN_LABEL {
-        return None;
-    }
-    let info = {
-        let len_info = LEN_INFO.lock().unwrap();
-        len_info[len_lb as usize]
-    };
+// pub fn get_len_cond(cond: &mut CondStmtBase) -> Option<CondStmtBase> {
+//     let len_lb;
+//     if is_len_label(cond.lb1) {
+//         len_lb = get_len_label(cond.lb1);
+//         cond.lb1 = get_normal_label(cond.lb1);
+//     } else if is_len_label(cond.lb2) {
+//         len_lb = get_len_label(cond.lb2);
+//         cond.lb2 = get_normal_label(cond.lb2);
+//     } else {
+//         return None;
+//     }
+//     if len_lb > MAX_LEN_LABEL {
+//         return None;
+//     }
+//     let info = {
+//         let len_info = LEN_INFO.lock().unwrap();
+//         len_info[len_lb as usize]
+//     };
 
-    let mut len_cond = *cond;
-    len_cond.op = defs::COND_LEN_OP;
-    len_cond.lb1 = info.0;
-    len_cond.lb2 = info.1;
+//     let mut len_cond = *cond;
+//     len_cond.op = defs::COND_LEN_OP;
+//     len_cond.lb1 = info.0;
+//     len_cond.lb2 = info.1;
 
-    Some(len_cond)
-}
+//     Some(len_cond)
+// }
 
 #[cfg(test)]
 mod test {
