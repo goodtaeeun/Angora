@@ -49,6 +49,8 @@ const char *ExploitCategoryAll = "all";
 const char *ExploitCategory[] = {"i0", "i1", "i2", "i3", "i4"};
 const char *CompareFuncCat = "cmpfn";
 
+std::set<std::string> taint_targets;
+
 // hash file name and file size
 u32 hashName(std::string str) {
   std::ifstream in(str, std::ifstream::ate | std::ifstream::binary);
@@ -141,6 +143,15 @@ public:
 };
 
 } // namespace
+
+
+void initTaintTarget(char* target_file) {
+  std::string line;
+  std::ifstream stream(target_file);
+
+  while (std::getline(stream, line))
+    taint_targets.insert(line);
+}
 
 char AngoraLLVMPass::ID = 0;
 
@@ -696,6 +707,9 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
 
   initVariables(M);
 
+  char* target_file = getenv("ANGORA_TAINT_TARGET");
+  initTaintTarget(target_file);
+
   if (DFSanMode)
     return true;
 
@@ -740,16 +754,23 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         std::string location_str = file_name + std::string(":") + line_str;
         std::cout << "Current Instruction is: " << location_str << std::endl;
 
-        std::string target_str = "stdin.c:21";
-        
-        if(location_str.compare(target_str) == 0) {
-          std::cout << "Found the target instruction" << std::endl;
-          visitTargetInst(Inst, location_str);
+        std::set<std::string>::iterator it;
+        for (it = taint_targets.begin(); it != taint_targets.end(); ++it) {
+          if (location_str.compare(*it) == 0) {
+            std::cout << "Found the target instruction" << std::endl;
+            visitTargetInst(Inst, location_str);
+          }
+        }
+
+
+        // if(location_str.compare(target_str) == 0) {
+        //   std::cout << "Found the target instruction" << std::endl;
+        //   visitTargetInst(Inst, location_str);
           // if (isa<CmpInst>(Inst)) {
           //   visitTargetInst(Inst, location_str);
           //   std::cout << "Visit target inst only if it is cmp" << std::endl;
           // }
-        }
+        // }
 
         // if (Inst->getMetadata(NoSanMetaId))
         //   continue;
