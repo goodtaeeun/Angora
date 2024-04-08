@@ -1127,6 +1127,15 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
     }
   }
 
+  // // Print the ll file with name dfsan.ll
+  // std::string ll_file = "dfsan.ll";
+  // std::error_code EC;
+  // raw_fd_ostream OS(ll_file, EC, sys::fs::F_None);
+  // M.print(OS, nullptr);
+  // OS.close();
+
+  // std::cout << "The ll file is saved as dfsan.ll" << std::endl;
+
   return Changed || !FnsToInstrument.empty() ||
          M.global_size() != InitialGlobalSize || M.size() != InitialModuleSize;
 }

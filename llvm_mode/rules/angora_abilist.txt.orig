@@ -103,8 +103,8 @@ fun:getc=uninstrumented
 fun:getc=custom
 fun:_IO_getc=uninstrumented
 fun:_IO_getc=custom
-fun:getchar=uninstrumented
-fun:getchar=custom
+# fun:getchar=uninstrumented
+# fun:getchar=custom
 
 # gets -> fgets?
 fun:gets=uninstrumented

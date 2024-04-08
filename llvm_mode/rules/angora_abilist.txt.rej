@@ -1,0 +1,13 @@
+--- /fuzzer/Angora/llvm_mode/rules/angora_abilist.txt	2022-04-13 03:31:13.958364072 +0000
++++ new_abilist.txt	2022-04-13 03:30:59.199011854 +0000
+@@ -101,8 +101,8 @@
+ # fun:getc=custom
+ fun:_IO_getc=uninstrumented
+ fun:_IO_getc=custom
+-# fun:getchar=uninstrumented
+-# fun:getchar=custom
++fun:getchar=uninstrumented
++fun:getchar=custom
+ 
+ # gets -> fgets?
+ fun:gets=uninstrumented

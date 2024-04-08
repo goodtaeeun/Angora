@@ -31,8 +31,8 @@ __attribute__((destructor(0))) void __angora_track_fini(void) {
 }
 
 #define __angora_get_sp_label __angora_get_len_label
-#define is_fuzzing_fd __angora_io_find_fd
-#define is_fuzzing_ffd __angora_io_find_pfile
+#define is_fuzzing_fd(X) true
+#define is_fuzzing_ffd(X) true
 #define add_fuzzing_fd __angora_io_add_fd
 #define add_fuzzing_ffd __angora_io_add_pfile
 #define remove_fuzzing_fd __angora_io_remove_fd

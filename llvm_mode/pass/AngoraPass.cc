@@ -127,18 +127,18 @@ public:
   void setInsNonSan(Instruction *v);
   Value *castArgType(IRBuilder<> &IRB, Value *V);
   void initVariables(Module &M);
-  void visitCallInst(Instruction *Inst);
-  void visitInvokeInst(Instruction *Inst);
-  void visitCompareFunc(Instruction *Inst);
-  void visitBranchInst(Instruction *Inst);
-  void visitCmpInst(Instruction *Inst);
-  void processCmp(Instruction *Cond, Constant *Cid, Instruction *InsertPoint);
+  void visitCallInst(Instruction *Inst,std::string location_str);
+  void visitInvokeInst(Instruction *Inst,std::string location_str);
+  void visitCompareFunc(Instruction *Inst,std::string location_str);
+  void visitBranchInst(Instruction *Inst,std::string location_str);
+  void visitCmpInst(Instruction *Inst,std::string location_str);
+  void processCmp(Instruction *Cond, Constant *Cid, Instruction *InsertPoint,std::string location_str);
   void visitTargetInst(Instruction *Inst, std::string location_str);
   void processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str);
-  void processBoolCmp(Value *Cond, Constant *Cid, Instruction *InsertPoint);
-  void visitSwitchInst(Module &M, Instruction *Inst);
-  void visitExploitation(Instruction *Inst);
-  void processCall(Instruction *Inst);
+  void processBoolCmp(Value *Cond, Constant *Cid, Instruction *InsertPoint,std::string location_str);
+  void visitSwitchInst(Module &M, Instruction *Inst,std::string location_str);
+  void visitExploitation(Instruction *Inst,std::string location_str);
+  void processCall(Instruction *Inst,std::string location_str);
   void addFnWrap(Function &F);
 };
 
@@ -378,10 +378,10 @@ void AngoraLLVMPass::addFnWrap(Function &F) {
   }
 }
 
-void AngoraLLVMPass::processCall(Instruction *Inst) {
+void AngoraLLVMPass::processCall(Instruction *Inst, std::string location_str) {
 
-  visitCompareFunc(Inst);
-  visitExploitation(Inst);
+  visitCompareFunc(Inst,location_str);
+  visitExploitation(Inst,location_str);
 
   //  if (ABIList.isIn(*Callee, "uninstrumented"))
   //  return;
@@ -393,7 +393,7 @@ void AngoraLLVMPass::processCall(Instruction *Inst) {
   }
 }
 
-void AngoraLLVMPass::visitCallInst(Instruction *Inst) {
+void AngoraLLVMPass::visitCallInst(Instruction *Inst,std::string location_str) {
 
   CallInst *Caller = dyn_cast<CallInst>(Inst);
   Function *Callee = Caller->getCalledFunction();
@@ -411,10 +411,10 @@ void AngoraLLVMPass::visitCallInst(Instruction *Inst) {
     return;
   }
 
-  processCall(Inst);
+  processCall(Inst, location_str);
 };
 
-void AngoraLLVMPass::visitInvokeInst(Instruction *Inst) {
+void AngoraLLVMPass::visitInvokeInst(Instruction *Inst,std::string location_str) {
 
   InvokeInst *Caller = dyn_cast<InvokeInst>(Inst);
   Function *Callee = Caller->getCalledFunction();
@@ -424,10 +424,10 @@ void AngoraLLVMPass::visitInvokeInst(Instruction *Inst) {
     return;
   }
 
-  processCall(Inst);
+  processCall(Inst,location_str);
 }
 
-void AngoraLLVMPass::visitCompareFunc(Instruction *Inst) {
+void AngoraLLVMPass::visitCompareFunc(Instruction *Inst,std::string location_str) {
   // configuration file: custom/exploitation_list.txt  fun:xx=cmpfn
 
   if (!isa<CallInst>(Inst) || !ExploitList.isIn(*Inst, CompareFuncCat)) {
@@ -485,7 +485,7 @@ Value *AngoraLLVMPass::castArgType(IRBuilder<> &IRB, Value *V) {
 }
 
 void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
-                                Instruction *InsertPoint) {
+                                Instruction *InsertPoint,std::string location_str) {
   CmpInst *Cmp = dyn_cast<CmpInst>(Cond);
   Value *OpArg[2];
   OpArg[0] = Cmp->getOperand(0);
@@ -493,7 +493,7 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
   Type *OpType = OpArg[0]->getType();
   if (!((OpType->isIntegerTy() && OpType->getIntegerBitWidth() <= 64) ||
         OpType->isFloatTy() || OpType->isDoubleTy() || OpType->isPointerTy())) {
-    processBoolCmp(Cond, Cid, InsertPoint);
+    processBoolCmp(Cond, Cid, InsertPoint,location_str);
     return;
   }
   int num_bytes = OpType->getScalarSizeInBits() / 8;
@@ -519,17 +519,18 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
     setValueNonSan(CondExt);
     OpArg[0] = castArgType(IRB, OpArg[0]);
     OpArg[1] = castArgType(IRB, OpArg[1]);
+    Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
     LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
-                                    OpArg[1], CondExt});
+                                    OpArg[1], CondExt, Str});
     setInsNonSan(ProxyCall);
 
 }
 
 void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
-                                    Instruction *InsertPoint) {
+                                    Instruction *InsertPoint,std::string location_str) {
   if (!Cond->getType()->isIntegerTy() ||
       Cond->getType()->getIntegerBitWidth() > 32)
     return;
@@ -545,26 +546,34 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
     setValueNonSan(OpArg[0]);
     LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
     setInsNonSan(CurCtx);
+    Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
     CallInst *ProxyCall =
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
-                                    OpArg[1], CondExt});
+                                    OpArg[1], CondExt,Str});
     setInsNonSan(ProxyCall);
   
 }
 
-void AngoraLLVMPass::visitCmpInst(Instruction *Inst) {
+void AngoraLLVMPass::visitCmpInst(Instruction *Inst,std::string location_str) {
   Instruction *InsertPoint = Inst->getNextNode();
   if (!InsertPoint || isa<ConstantInt>(Inst))
     return;
   Constant *Cid = ConstantInt::get(Int32Ty, getInstructionId(Inst));
-  processCmp(Inst, Cid, InsertPoint);
+  processCmp(Inst, Cid, InsertPoint, location_str);
 }
 
 void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
   // CmpInst *Cmp = dyn_cast<CmpInst>(Inst);
+
+  int num_operand = Inst->getNumOperands();
+
   Value *OpArg[2];
   OpArg[0] = Inst->getOperand(0);
-  OpArg[1] = Inst->getOperand(1);
+  
+  if (num_operand > 1)
+    OpArg[1] = Inst->getOperand(1);
+  else
+    OpArg[1] = Inst->getOperand(0);
 
   IRBuilder<> IRB(InsertPoint);
 
@@ -589,7 +598,7 @@ void AngoraLLVMPass::visitTargetInst(Instruction *Inst, std::string location_str
   processTarget(Inst, InsertPoint, location_str);
 }
 
-void AngoraLLVMPass::visitBranchInst(Instruction *Inst) {
+void AngoraLLVMPass::visitBranchInst(Instruction *Inst,std::string location_str) {
   BranchInst *Br = dyn_cast<BranchInst>(Inst);
   if (Br->isConditional()) {
     Value *Cond = Br->getCondition();
@@ -597,13 +606,13 @@ void AngoraLLVMPass::visitBranchInst(Instruction *Inst) {
       if (!isa<CmpInst>(Cond)) {
         // From  and, or, call, phi ....
         Constant *Cid = ConstantInt::get(Int32Ty, getInstructionId(Inst));
-        processBoolCmp(Cond, Cid, Inst);
+        processBoolCmp(Cond, Cid, Inst, location_str);
       }
     }
   }
 }
 
-void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
+void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst,std::string location_str) {
 
   SwitchInst *Sw = dyn_cast<SwitchInst>(Inst);
   Value *Cond = Sw->getCondition();
@@ -646,7 +655,7 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
     setInsNonSan(ProxyCall);
 }
 
-void AngoraLLVMPass::visitExploitation(Instruction *Inst) {
+void AngoraLLVMPass::visitExploitation(Instruction *Inst,std::string location_str) {
   // For each instruction and called function.
   bool exploit_all = ExploitList.isIn(*Inst, ExploitCategoryAll);
   IRBuilder<> IRB(Inst);
@@ -682,12 +691,12 @@ void AngoraLLVMPass::visitExploitation(Instruction *Inst) {
             ParamVal = IRB.CreateZExt(ParamVal, Int64Ty);
           }
           Value *SizeArg = ConstantInt::get(Int32Ty, size);
-
+          Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
           if (TrackMode) {
             LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
             setInsNonSan(CurCtx);
             CallInst *ProxyCall = IRB.CreateCall(
-                TraceExploitTT, {Cid, CurCtx, SizeArg, TypeArg, ParamVal});
+                TraceExploitTT, {Cid, CurCtx, SizeArg, TypeArg, ParamVal,Str});
             setInsNonSan(ProxyCall);
           }
         }
@@ -703,6 +712,10 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
     OKF("Track Mode.");
   } else if (DFSanMode) {
     OKF("DFSan Mode.");
+  }
+
+  for (auto &F : M) {
+      F.addFnAttr("dfs");
   }
 
   initVariables(M);
@@ -742,7 +755,7 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         Instruction *Inst = &(*inst);
         inst_list.push_back(Inst);
       }
-      std::cout << "For all instructions" << std::endl;
+      // std::cout << "For all instructions" << std::endl;
       for (auto inst = inst_list.begin(); inst != inst_list.end(); inst++) {
         Instruction *Inst = *inst;
         // Get the line number of the instruction.
@@ -752,50 +765,56 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
           continue; 
         std::string line_str = std::to_string(DILoc->getLine());
         std::string location_str = file_name + std::string(":") + line_str;
-        std::cout << "Current Instruction is: " << location_str << std::endl;
+        // std::cout << "Current Instruction is: " << location_str << std::endl;
 
+        if (Inst->getMetadata(NoSanMetaId))
+          continue;
+
+        int was_target = 0;
         std::set<std::string>::iterator it;
         for (it = taint_targets.begin(); it != taint_targets.end(); ++it) {
           if (location_str.compare(*it) == 0) {
             std::cout << "Found the target instruction" << std::endl;
             visitTargetInst(Inst, location_str);
+            was_target = 1;
+            break;
           }
         }
-
-
-        // if(location_str.compare(target_str) == 0) {
-        //   std::cout << "Found the target instruction" << std::endl;
-        //   visitTargetInst(Inst, location_str);
-          // if (isa<CmpInst>(Inst)) {
-          //   visitTargetInst(Inst, location_str);
-          //   std::cout << "Visit target inst only if it is cmp" << std::endl;
-          // }
-        // }
 
         // if (Inst->getMetadata(NoSanMetaId))
         //   continue;
         // if (isa<CallInst>(Inst)) {
-        //   visitCallInst(Inst);
+        //   visitCallInst(Inst,location_str);
         //   std::cout << "Visit Call inst" << std::endl;
         // } else if (isa<InvokeInst>(Inst)) {
-        //   visitInvokeInst(Inst);
+        //   visitInvokeInst(Inst,location_str);
         //   std::cout << "Visit Invoke inst" << std::endl;
         // } else if (isa<BranchInst>(Inst)) {
-        //   visitBranchInst(Inst);
+        //   visitBranchInst(Inst,location_str);
         //   std::cout << "Visit Branch inst" << std::endl;
         // } else if (isa<SwitchInst>(Inst)) {
-        //   visitSwitchInst(M, Inst);
+        //   visitSwitchInst(M, Inst,location_str);
         //   std::cout << "Visit Switch inst" << std::endl;
         // } else if (isa<CmpInst>(Inst)) {
-        //   visitCmpInst(Inst, location_str);
+        //   visitCmpInst(Inst,location_str);
         //   std::cout << "Visit Cmp inst" << std::endl;
         // } else {
-        //   visitExploitation(Inst);
+        //   visitExploitation(Inst,location_str);
         //   std::cout << "Visit Exploitation" << std::endl;
         // }
       }
     }
   }
+
+  // Print the ll file with name angora.ll
+  std::string ll_file = "angora.ll";
+  std::error_code EC;
+  raw_fd_ostream OS(ll_file, EC, sys::fs::F_None);
+  M.print(OS, nullptr);
+  OS.close();
+
+  std::cout << "The ll file is saved as angora.ll" << std::endl;
+
 
   if (is_bc)
     OKF("Max constraint id is %d", CidCounter);

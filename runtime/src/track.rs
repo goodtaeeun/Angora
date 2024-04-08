@@ -39,7 +39,8 @@ pub extern "C" fn __angora_trace_cmp_tt(
     _e: u64,
     _f: u64,
     _g: u32,
-    _h: *mut i8
+    _h: *mut i8,
+    loc_string : *mut i8
 ) {
     panic!("Forbid calling __angora_trace_cmp_tt directly");
 }
@@ -53,6 +54,7 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
     arg1: u64,
     arg2: u64,
     condition: u32,
+    loc_string : *mut i8,
     _l0: DfsanLabel,
     _l1: DfsanLabel,
     _l2: DfsanLabel,
@@ -60,6 +62,7 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
     l4: DfsanLabel,
     l5: DfsanLabel,
     _l6: DfsanLabel,
+    l7: DfsanLabel
 ) {
     // eprintln!("__dfsw___angora_trace_cmp_tt: [CMP] id: {}, ctx: {}", cmpid, get_context());
     // ret_label: *mut DfsanLabel
@@ -69,14 +72,20 @@ pub extern "C" fn __dfsw___angora_trace_cmp_tt(
         return;
     }
 
+    let cstr = unsafe { CStr::from_ptr(loc_string) };
+    let str_slice= cstr.to_str().expect("Failed to convert to &str");
+    let str_to_save = str_slice.to_string();
+    // println!("The location is {}", str_slice);
+    // std::io::stdout().flush().expect("Failed to flush stdout");
+
     let op = infer_eq_sign(op, lb1, lb2);
     infer_shape(lb1, size);
     infer_shape(lb2, size);
-    let dummy_str = String::from("");
-    println!("@@@@@@@@@ __dfsw___angora_trace_cmp_tt is called");
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    // let dummy_str = String::from("");
+    // println!("@@@@@@@@@ __dfsw___angora_trace_cmp_tt is called");
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
-    log_cmp(cmpid, context, condition, op, size, lb1, lb2, arg1, arg2, dummy_str);
+    log_cmp(cmpid, context, condition, op, size, lb1, lb2, arg1, arg2, str_to_save);
 }
 
 #[no_mangle]
@@ -149,8 +158,8 @@ pub extern "C" fn __dfsw___angora_trace_switch_tt(
             lc.save(cond_i);
         }
     }
-    println!("@@@@@@@@@ __dfsw___angora_trace_switch_tt is called");
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    // println!("@@@@@@@@@ __dfsw___angora_trace_switch_tt is called");
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
 
@@ -217,13 +226,13 @@ pub extern "C" fn __dfsw___angora_trace_fn_tt(
         lc.save(cond);
         lc.save_magic_bytes((arg1, arg2));
     }
-    println!("@@@@@@@@@ __dfsw___angora_trace_fn_tt is called");
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    // println!("@@@@@@@@@ __dfsw___angora_trace_fn_tt is called");
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
 
 #[no_mangle]
-pub extern "C" fn __angora_trace_exploit_val_tt(_a: u32, _b: u32, _c: u32, _d: u32, _e: u64) {
+pub extern "C" fn __angora_trace_exploit_val_tt(_a: u32, _b: u32, _c: u32, _d: u32, _e: u64,  _f: *mut i8) {
     panic!("Forbid calling __angora_trace_exploit_val_tt directly");
 }
 
@@ -234,21 +243,29 @@ pub extern "C" fn __dfsw___angora_trace_exploit_val_tt(
     size: u32,
     op: u32,
     val: u64,
+    loc_string : *mut i8,
     _l0: DfsanLabel,
     _l1: DfsanLabel,
     _l2: DfsanLabel,
     _l3: DfsanLabel,
     l4: DfsanLabel,
+    l5: DfsanLabel
 ) {
     let lb: DfsanLabel = l4;
     if len_label::is_len_label(lb) || lb == 0 {
         return;
     }
 
+    let cstr = unsafe { CStr::from_ptr(loc_string) };
+    let str_slice= cstr.to_str().expect("Failed to convert to &str");
+    let str_to_save = str_slice.to_string();
+    // println!("The location is {}", str_slice);
+    // std::io::stdout().flush().expect("Failed to flush stdout");
+
     let dummy_str = String::from("");
-    log_cmp(cmpid, context, defs::COND_FALSE_ST, op, size, lb, 0, val, 0, dummy_str);
-    println!("@@@@@@@@@ __dfsw___angora_trace_exploit_val_tt is called");
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    log_cmp(cmpid, context, defs::COND_FALSE_ST, op, size, lb, 0, val, 0, str_to_save);
+    // println!("@@@@@@@@@ __dfsw___angora_trace_exploit_val_tt is called");
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
 
@@ -271,21 +288,22 @@ pub extern "C" fn __dfsw___angora_trace_target_tt(
     _l1: DfsanLabel,
     _l2: DfsanLabel,
 ) {
+    // println!("@@@@@@@@@ __dfsw__angora_trace_target_tt is called");
     // eprintln!("__dfsw___angora_trace_cmp_tt: [CMP] id: {}, ctx: {}", cmpid, get_context());
     // ret_label: *mut DfsanLabel
-    let lb1 = _l0;
-    let lb2 = _l1;
-    if lb1 == 0 && lb2 == 0 {
-        return;
-    }
-
-    println!("@@@@@@@@@ __dfsw__angora_trace_target_tt is called");
     let cstr = unsafe { CStr::from_ptr(loc_string) };
     let str_slice= cstr.to_str().expect("Failed to convert to &str");
     let str_to_save = str_slice.to_string();
-    println!("The location is {}", str_slice);
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    // println!("The location is {}", str_slice);
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
+
+    let lb1 = _l0;
+    let lb2 = _l1;
+    if lb1 == 0 && lb2 == 0 {
+        // println!("However, lb1 == 0 && lb2 == 0");
+        return;
+    }
     log_cmp(0, 0, 0, 0, 0, lb1, lb2, 0, 0,str_to_save);
 }
 
@@ -318,13 +336,13 @@ fn log_cmp(
         loc_string,
         offsets: vec![]
     };
-    println!("@@@@@@@@@ log_cmp is called");
+    // println!("@@@@@@@@@ log_cmp is called");
     let mut lcl = LC.lock().expect("Could not lock LC.");
-    println!("@@@@@@@@@ lcl is locked");
+    // println!("@@@@@@@@@ lcl is locked");
     if let Some(ref mut lc) = *lcl {
         lc.save(cond);
     }
-    std::io::stdout().flush().expect("Failed to flush stdout");
+    // std::io::stdout().flush().expect("Failed to flush stdout");
     // process::exit(0);
 }
 

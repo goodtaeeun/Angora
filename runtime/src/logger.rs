@@ -23,7 +23,7 @@ impl Logger {
             Err(_) => None,
         };
 
-        eprintln!("@@@@@ Logger.new is called!!");
+        // eprintln!("@@@@@ Logger.new is called!!");
 
         Self {
             data: LogData::new(),
@@ -64,16 +64,18 @@ impl Logger {
             return;
         }
 
-        eprintln!("@@@@@ Logger.save is called!!");
+        // eprintln!("@@@@@ Logger.save is called!!");
+        // eprintln!("@@@@@ cond.locstring is {}",cond.loc_string);
         let mut order = 0;
         
         // also modify cond to remove len_label information
         // let len_cond = len_label::get_len_cond(&mut cond);
 
-        if cond.op < defs::COND_AFL_OP || cond.op == defs::COND_FN_OP {
-            order = self.get_order(&mut cond);
-        }
-        if order <= config::MAX_COND_ORDER {
+        // if cond.op < defs::COND_AFL_OP || cond.op == defs::COND_FN_OP {
+        //     order = self.get_order(&mut cond);
+        // }
+        // if order <= config::MAX_COND_ORDER {
+            // eprintln!("@@@@@ cond is actually saved!!");
             self.save_tag(cond.lb1);
             self.save_tag(cond.lb2);
             self.data.cond_list.push(cond);
@@ -81,7 +83,7 @@ impl Logger {
             //     c.order = 0x10000 + order; // avoid the same as cond;
             //     self.data.cond_list.push(c);
             // }
-        }
+        // }
     }
 
     fn parse_log_data(
@@ -96,6 +98,13 @@ impl Logger {
         .unwrap();
 
         for cond_base in self.data.cond_list.iter() {
+            // eprintln!("@@@@@ cond_base.loc_string: {}",cond_base.loc_string);
+            // if cond_base.op == defs::COND_LEN_OP{
+            //     eprintln!("@@@@@ cond_base.op == defs::COND_LEN_OP");}
+            // if (cond_base.lb1 <= 0 && cond_base.lb2 <= 0){
+            //     eprintln!("@@@@@ cond_base.lb1 <= 0 && cond_base.lb2 <= 0");
+            // }
+
             if cond_base.op != defs::COND_LEN_OP && (cond_base.lb1 > 0 || cond_base.lb2 > 0) {
 
                 let empty_offsets: Vec<TagSeg> = vec![];
@@ -106,13 +115,13 @@ impl Logger {
                 combined_offsets.extend(offsets2.iter().cloned()); // Extend with elements from offsets2
 
 
-                eprintln!("@@@@@ drop_results: For every con in cond_list");
+
                 if !cond_base.is_afl() {
                     let mut offsets = vec![];
                     for off in combined_offsets {
                         offsets.push(format!("{}-{}", off.begin, off.end));
                     }
-                    eprintln!("@@@@@ drop_results: pass the cond?");
+                    // eprintln!("@@@@@ proceed to writeln");
                     writeln!(
                         log_q,
                         "{},{}",
@@ -134,7 +143,7 @@ impl Logger {
 
 impl Drop for Logger {
     fn drop(&mut self) {
-        eprintln!("@@@@@ Logger.drop is called!!");
-        self.fini();
+        // eprintln!("@@@@@ Logger.drop is called!!");
+        self.parse_log_data();
     }
 }
