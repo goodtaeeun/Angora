@@ -90,12 +90,14 @@ impl Logger {
         &self
     ) {
         let dir = Path::new(".");
-        let mut log_q = fs::File::create(dir.join(defs::COND_QUEUE_FILE)).unwrap();
-        writeln!(
-            log_q,
-            "location, offsets"
-        )
-        .unwrap();
+        let mut log_q = fs::File::create(dir.join(defs::TAINT_OUT_FILE)).unwrap();
+        // writeln!(
+        //     log_q,
+        //     "location, offsets"
+        // )
+        // .unwrap();
+
+        let mut result: HashMap<String, Vec<(u32, u32)>> = HashMap::new();
 
         for cond_base in self.data.cond_list.iter() {
             // eprintln!("@@@@@ cond_base.loc_string: {}",cond_base.loc_string);
@@ -118,20 +120,72 @@ impl Logger {
 
                 if !cond_base.is_afl() {
                     let mut offsets = vec![];
+                    let mut ranges: Vec<(u32, u32)> = vec![];
                     for off in combined_offsets {
-                        offsets.push(format!("{}-{}", off.begin, off.end));
+                        // To represent the exact byte that is being used, we need to subtract 1 from the end
+                        offsets.push(format!("{}-{}", off.begin, off.end-1));
+                        ranges.push((off.begin, off.end-1));
                     }
-                    // eprintln!("@@@@@ proceed to writeln");
-                    writeln!(
-                        log_q,
-                        "{},{}",
-                        cond_base.loc_string,
-                        offsets.join("&")
-                    )
-                    .unwrap();
+
+                    // let loc_string = cond_base.loc_string
+                    
+                    if !result.contains_key(&cond_base.loc_string) {
+                        result.insert(cond_base.loc_string.clone(), vec![]);
+                    }
+
+                    let line_ranges = result.get_mut(&cond_base.loc_string).unwrap();
+                    
+                    for range in ranges {
+                        line_ranges.push(range);
+                    }
+
                 }
             }
         }
+
+        for (line_name, ranges) in result.iter_mut() {
+            ranges.sort_by_key(|&x| x.0);
+            // eprintln!("@@@@@ line is {}",line_name);
+            // eprintln!("@@@@@ renges are {:?}",ranges);
+
+            let mut merged_ranges = Vec::new();
+            let mut iter = ranges.iter().copied();
+    
+            if let Some(mut current) = iter.next() {
+                while let Some(next) = iter.next() {
+                    let (mut current_start, mut current_end) = current;
+                    let (next_start, next_end) = next;
+                    
+                    if next_start <= current_end + 1 {
+                        current = (current_start, current_end.max(next_end));
+                    } else {
+                        merged_ranges.push(current);
+                        current = (next_start, next_end);
+                    }
+    
+
+                }
+    
+                merged_ranges.push(current);
+            }
+
+            let mut offset_strings = vec![];
+            for range in merged_ranges {
+                let (mut start, mut end) = range;
+                offset_strings.push(format!("{}-{}", start, end));
+            }
+
+            // eprintln!("@@@@@ proceed to writeln");
+            writeln!(
+                log_q,
+                "{},{}",
+                line_name.to_string(),
+                offset_strings.join("&")
+            )
+            .unwrap();
+        }
+
+      
     }
 
     fn fini(&self) {
