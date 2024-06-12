@@ -584,7 +584,7 @@ void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, 
   CallInst *ProxyCall =
       IRB.CreateCall(TraceTargetTT, {OpArg[0],
                                   OpArg[1], Str});
-  std::cout << "@@@ processCmp: Insert call to TraceTargetTT"  << std::endl;
+  std::cout << "@@@ processTarget: Insert call to TraceTargetTT"  << std::endl;
   std::cout << "@@@ The location string is: " << location_str << std::endl;
   setInsNonSan(ProxyCall);
 
