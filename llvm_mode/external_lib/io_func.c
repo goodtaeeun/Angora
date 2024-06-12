@@ -23,6 +23,7 @@
 #include "./len_label.h"
 
 static int granularity = 1; // byte level
+long getchar_offset = 0;
 
 extern void __angora_track_fini_rs();
 
@@ -349,6 +350,8 @@ int __dfsw_getc(FILE *fd, dfsan_label fd_label, dfsan_label *ret_label) {
 DEFAULT_VISIBILITY
 int __dfsw_getchar(dfsan_label *ret_label) {
   long offset = ftell(stdin);
+  if (offset < 0)
+    offset = getchar_offset++;
   int c = getchar();
   *ret_label = 0;
 #ifdef DEBUG_INFO
