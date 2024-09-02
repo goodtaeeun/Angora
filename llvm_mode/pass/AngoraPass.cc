@@ -759,17 +759,13 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
       for (auto inst = inst_list.begin(); inst != inst_list.end(); inst++) {
         Instruction *Inst = *inst;
 
-        if (auto *CI = dyn_cast<CallInst>(Inst)) {
-        // Get the called function
-            if (Function *Callee = CI->getCalledFunction()) {
-                // Check if the called function's name is "llvm.dbg.declare"
-                if (Callee->getName() == "llvm.dbg.declare") {
-                    continue;
-                    }
-                }
+        // Check and skip the LLVM intrinsic instructions.
+        if (auto *II = dyn_cast<IntrinsicInst>(Inst)) {
+            if (II->getIntrinsicID() == Intrinsic::dbg_declare) {
+                continue;
+            }
         }
-
-
+        
         // Get the line number of the instruction.
         DebugLoc dbg = (*inst)->getDebugLoc();
         DILocation* DILoc = dbg.get();
