@@ -10,7 +10,7 @@
 int main () {
   int buf[20];
 
-  FILE* fp = fopen("pointer_arith_fp/args", "rb");
+  FILE* fp = fopen("pointer_arith/args", "rb");
 
     for (int i =0; i < 10; i ++)
         buf[i] = fgetc(fp) - '0';
