@@ -584,8 +584,6 @@ void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, 
   CallInst *ProxyCall =
       IRB.CreateCall(TraceTargetTT, {OpArg[0],
                                   OpArg[1], Str});
-  std::cout << "@@@ processTarget: Insert call to TraceTargetTT"  << std::endl;
-  std::cout << "@@@ The location string is: " << location_str << std::endl;
   setInsNonSan(ProxyCall);
 
 }
@@ -755,7 +753,7 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         Instruction *Inst = &(*inst);
         inst_list.push_back(Inst);
       }
-      // std::cout << "For all instructions" << std::endl;
+
       for (auto inst = inst_list.begin(); inst != inst_list.end(); inst++) {
         Instruction *Inst = *inst;
 
@@ -765,6 +763,13 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
                 continue;
             }
         }
+        // Skip PHI instructions
+        if (isa<PHINode>(Inst)) {
+            continue;
+        }
+        // Skip instructions with no metadata
+        if (Inst->getMetadata(NoSanMetaId))
+          continue;
         
         // Get the line number of the instruction.
         DebugLoc dbg = (*inst)->getDebugLoc();
@@ -773,43 +778,16 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
           continue; 
         std::string line_str = std::to_string(DILoc->getLine());
         std::string location_str = file_name + std::string(":") + line_str;
-        // std::cout << "Current Instruction is: " << location_str << std::endl;
 
-        if (Inst->getMetadata(NoSanMetaId))
-          continue;
-
-        int was_target = 0;
         std::set<std::string>::iterator it;
         for (it = taint_targets.begin(); it != taint_targets.end(); ++it) {
           if (location_str.compare(*it) == 0) {
-            std::cout << "Found the target instruction" << std::endl;
+            std::cerr << "@@ " << location_str << ": ";
+            errs() << *Inst << "\n";
             visitTargetInst(Inst, location_str);
-            was_target = 1;
             break;
           }
         }
-
-        // if (Inst->getMetadata(NoSanMetaId))
-        //   continue;
-        // if (isa<CallInst>(Inst)) {
-        //   visitCallInst(Inst,location_str);
-        //   std::cout << "Visit Call inst" << std::endl;
-        // } else if (isa<InvokeInst>(Inst)) {
-        //   visitInvokeInst(Inst,location_str);
-        //   std::cout << "Visit Invoke inst" << std::endl;
-        // } else if (isa<BranchInst>(Inst)) {
-        //   visitBranchInst(Inst,location_str);
-        //   std::cout << "Visit Branch inst" << std::endl;
-        // } else if (isa<SwitchInst>(Inst)) {
-        //   visitSwitchInst(M, Inst,location_str);
-        //   std::cout << "Visit Switch inst" << std::endl;
-        // } else if (isa<CmpInst>(Inst)) {
-        //   visitCmpInst(Inst,location_str);
-        //   std::cout << "Visit Cmp inst" << std::endl;
-        // } else {
-        //   visitExploitation(Inst,location_str);
-        //   std::cout << "Visit Exploitation" << std::endl;
-        // }
       }
     }
   }
