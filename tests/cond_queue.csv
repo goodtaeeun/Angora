@@ -1,8 +1,0 @@
-location, offsets
-stdin.c:16,0-1
-stdin.c:16,3-4
-stdin.c:16,6-7
-stdin.c:16,9-10
-stdin.c:22,2-3&1-2
-stdin.c:23,1-2&2-3
-stdin.c:26,1-2&2-3
