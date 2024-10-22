@@ -50,6 +50,7 @@ const char *ExploitCategory[] = {"i0", "i1", "i2", "i3", "i4"};
 const char *CompareFuncCat = "cmpfn";
 
 std::set<std::string> taint_targets;
+std::string one_true_taint_target;
 
 // hash file name and file size
 u32 hashName(std::string str) {
@@ -145,12 +146,20 @@ public:
 } // namespace
 
 
-void initTaintTarget(char* target_file) {
+void initTaintTarget() {
+  char* target_file = getenv("ANGORA_TAINT_TARGET");
   std::string line;
-  std::ifstream stream(target_file);
+  std::ifstream stream;
 
+  stream.open(target_file);
   while (std::getline(stream, line))
     taint_targets.insert(line);
+  stream.close();
+
+  char* one_true_target_file = getenv("ANGORA_ONE_TRUE_TAINT_TARGET");
+  stream.open(target_file);
+  std::getline(stream, one_true_taint_target);
+  stream.close();
 }
 
 char AngoraLLVMPass::ID = 0;
@@ -718,8 +727,8 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
 
   initVariables(M);
 
-  char* target_file = getenv("ANGORA_TAINT_TARGET");
-  initTaintTarget(target_file);
+
+  initTaintTarget();
 
   if (DFSanMode)
     return true;
@@ -780,14 +789,23 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
         std::string location_str = file_name + std::string(":") + line_str;
 
         std::set<std::string>::iterator it;
-        for (it = taint_targets.begin(); it != taint_targets.end(); ++it) {
-          if (location_str.compare(*it) == 0) {
-            std::cerr << "@@ " << location_str << ": ";
-            errs() << *Inst << "\n";
-            visitTargetInst(Inst, location_str);
-            break;
+        if (location_str.compare(one_true_taint_target) == 0) {
+          std::cerr << "@@ One True Taint Target " << location_str << ": ";
+          errs() << *Inst << "\n";
+          visitTargetInst(Inst, "[TARGET]" + location_str);
+        }
+        else {
+          for (it = taint_targets.begin(); it != taint_targets.end(); ++it) {
+            if (location_str.compare(*it) == 0) {
+              std::cerr << "@@ " << location_str << ": ";
+              errs() << *Inst << "\n";
+              visitTargetInst(Inst, location_str);
+              break;
           }
         }
+        }
+
+
       }
     }
   }

@@ -164,6 +164,13 @@ static void add_dfsan_pass() {
     }
 }
 
+static void add_semcov_pass() {
+    cc_params[cc_par_cnt++] = "-Xclang";
+    cc_params[cc_par_cnt++] = "-load";
+    cc_params[cc_par_cnt++] = "-Xclang";
+    cc_params[cc_par_cnt++] = alloc_printf("%s/pass/libSemCovPass.so", obj_path);
+}
+
 static void edit_params(u32 argc, char **argv) {
 
   u8 fortify_set = 0, asan_set = 0, x_set = 0, maybe_linking = 1, bit_mode = 0;
@@ -228,6 +235,7 @@ static void edit_params(u32 argc, char **argv) {
   if (!maybe_assembler) {
     add_angora_pass();
     add_dfsan_pass();
+    //  add_semcov_pass();
   }
 
   cc_params[cc_par_cnt++] = "-pie";
