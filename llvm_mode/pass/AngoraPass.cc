@@ -157,7 +157,7 @@ void initTaintTarget() {
   stream.close();
 
   char* one_true_target_file = getenv("ANGORA_ONE_TRUE_TAINT_TARGET");
-  stream.open(target_file);
+  stream.open(one_true_target_file);
   std::getline(stream, one_true_taint_target);
   stream.close();
 }
