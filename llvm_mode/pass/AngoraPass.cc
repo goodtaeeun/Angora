@@ -572,54 +572,89 @@ void AngoraLLVMPass::visitCmpInst(Instruction *Inst,std::string location_str) {
 }
 
 void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
-  IRBuilder<> IRB(InsertPoint);
+    IRBuilder<> IRB(InsertPoint);
 
-  CallInst *Call = dyn_cast<CallInst>(Inst);
-  if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName() == "printf") {
-    // Special handling for printf
-    Value *FormatStr = Call->getArgOperand(0); // Typically the first argument is the format string
-    if (FormatStr->getType()->isPointerTy()) {
-      // Load the contents of the pointer
-      FormatStr = IRB.CreateLoad(IRB.getInt8Ty(), FormatStr);
+    CallInst *Call = dyn_cast<CallInst>(Inst);
+    if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName() == "printf") {
+        // Split the basic block at the printf call
+        BasicBlock *OriginalBlock = Call->getParent();
+        BasicBlock *SecondBlock = OriginalBlock->splitBasicBlock(Call->getNextNode(), "after_printf");
+
+        // Remove the unconditional branch auto-inserted at the end of the first block
+        OriginalBlock->getTerminator()->eraseFromParent();
+
+        // Add instrumentation after the printf call
+        IRB.SetInsertPoint(OriginalBlock);
+        Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str()); // Line number or location info
+
+        for (unsigned i = 1; i < Call->getNumArgOperands(); ++i) {
+            Value *Arg = Call->getArgOperand(i);
+
+            if (Arg->getType()->isPointerTy()) {
+                // Start processing the pointer argument
+                Value *BasePtr = IRB.CreatePointerCast(Arg, IRB.getInt8PtrTy());
+                Value *Offset = ConstantInt::get(IRB.getInt32Ty(), 0); // Start with offset 0
+
+                // Create the loop and exit blocks
+                BasicBlock *LoopBlock = BasicBlock::Create(IRB.getContext(), "printf_loop", OriginalBlock->getParent());
+                BasicBlock *ExitBlock = BasicBlock::Create(IRB.getContext(), "printf_exit", OriginalBlock->getParent());
+
+                // Move LoopBlock and ExitBlock before SecondBlock
+                LoopBlock->moveBefore(SecondBlock);
+                ExitBlock->moveBefore(SecondBlock);
+
+                // Branch to the loop block
+                IRB.CreateBr(LoopBlock);
+
+                // Set up the loop block
+                IRBuilder<> LoopBuilder(LoopBlock);
+                PHINode *OffsetPhi = LoopBuilder.CreatePHI(IRB.getInt32Ty(), 2);
+                OffsetPhi->addIncoming(Offset, OriginalBlock);
+
+                // Compute the address at the current offset
+                Value *CurAddr = LoopBuilder.CreateGEP(IRB.getInt8Ty(), BasePtr, OffsetPhi);
+
+                // Load the byte at the current offset
+                Value *Loaded = LoopBuilder.CreateLoad(IRB.getInt8Ty(), CurAddr);
+
+                // Instrument the loaded value
+                LoopBuilder.CreateCall(TraceTargetTT, {Loaded, Loaded, Str});
+
+                // Increment the offset 
+                Value *NextOffset = LoopBuilder.CreateAdd(OffsetPhi, ConstantInt::get(IRB.getInt32Ty(), 1));
+                OffsetPhi->addIncoming(NextOffset, LoopBlock);
+
+                // Check if we've hit the null terminator
+                Value *IsNull = LoopBuilder.CreateICmpEQ(Loaded, ConstantInt::get(IRB.getInt8Ty(), 0));
+                LoopBuilder.CreateCondBr(IsNull, ExitBlock, LoopBlock);
+
+                // Set up the exit block
+                IRB.SetInsertPoint(ExitBlock);
+            }
+        }
+
+        // Jump to the second block to continue normal execution
+        IRB.CreateBr(SecondBlock);
+        return; // Avoid further processing since we've handled printf
     }
 
-    // Now handle all arguments to printf
-    SmallVector<Value *, 8> Args;
-    Args.push_back(FormatStr);
+    // Default handling for other instructions
+    Value *OpArg[2];
+    OpArg[0] = Inst->getOperand(0);
 
-    for (unsigned i = 1; i < Call->getNumArgOperands(); i++) {
-      Value *Arg = Call->getArgOperand(i);
-      if (Arg->getType()->isPointerTy()) {
-        // Dereference pointers for printf arguments
-        Arg = IRB.CreateLoad(IRB.getInt8Ty(), Arg); // Modify for specific type
-      }
-      Args.push_back(Arg);
-    }
+    if (Inst->getNumOperands() > 1)
+        OpArg[1] = Inst->getOperand(1);
+    else
+        OpArg[1] = Inst->getOperand(0);
 
-    // Use Args for TraceTargetTT or any specific instrumentation
+    OpArg[0] = castArgType(IRB, OpArg[0]);
+    OpArg[1] = castArgType(IRB, OpArg[1]);
     Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
-    Args.push_back(Str);
-    CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, Args);
+    CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
     setInsNonSan(ProxyCall);
-    return; // Avoid further processing since we've handled this case
-  }
-
-  // Default handling
-  Value *OpArg[2];
-  OpArg[0] = Inst->getOperand(0);
-
-  if (Inst->getNumOperands() > 1)
-    OpArg[1] = Inst->getOperand(1);
-  else
-    OpArg[1] = Inst->getOperand(0);
-
-  OpArg[0] = castArgType(IRB, OpArg[0]);
-  OpArg[1] = castArgType(IRB, OpArg[1]);
-  Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
-  CallInst *ProxyCall =
-      IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
-  setInsNonSan(ProxyCall);
 }
+
+
 
 void AngoraLLVMPass::visitTargetInst(Instruction *Inst, std::string location_str) {
   Instruction *InsertPoint = Inst->getNextNode();
