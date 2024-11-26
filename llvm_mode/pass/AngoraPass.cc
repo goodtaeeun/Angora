@@ -572,29 +572,53 @@ void AngoraLLVMPass::visitCmpInst(Instruction *Inst,std::string location_str) {
 }
 
 void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
-  // CmpInst *Cmp = dyn_cast<CmpInst>(Inst);
+  IRBuilder<> IRB(InsertPoint);
 
-  int num_operand = Inst->getNumOperands();
+  CallInst *Call = dyn_cast<CallInst>(Inst);
+  if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName() == "printf") {
+    // Special handling for printf
+    Value *FormatStr = Call->getArgOperand(0); // Typically the first argument is the format string
+    if (FormatStr->getType()->isPointerTy()) {
+      // Load the contents of the pointer
+      FormatStr = IRB.CreateLoad(IRB.getInt8Ty(), FormatStr);
+    }
 
+    // Now handle all arguments to printf
+    SmallVector<Value *, 8> Args;
+    Args.push_back(FormatStr);
+
+    for (unsigned i = 1; i < Call->getNumArgOperands(); i++) {
+      Value *Arg = Call->getArgOperand(i);
+      if (Arg->getType()->isPointerTy()) {
+        // Dereference pointers for printf arguments
+        Arg = IRB.CreateLoad(IRB.getInt8Ty(), Arg); // Modify for specific type
+      }
+      Args.push_back(Arg);
+    }
+
+    // Use Args for TraceTargetTT or any specific instrumentation
+    Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
+    Args.push_back(Str);
+    CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, Args);
+    setInsNonSan(ProxyCall);
+    return; // Avoid further processing since we've handled this case
+  }
+
+  // Default handling
   Value *OpArg[2];
   OpArg[0] = Inst->getOperand(0);
-  
-  if (num_operand > 1)
+
+  if (Inst->getNumOperands() > 1)
     OpArg[1] = Inst->getOperand(1);
   else
     OpArg[1] = Inst->getOperand(0);
-
-  IRBuilder<> IRB(InsertPoint);
-
 
   OpArg[0] = castArgType(IRB, OpArg[0]);
   OpArg[1] = castArgType(IRB, OpArg[1]);
   Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
   CallInst *ProxyCall =
-      IRB.CreateCall(TraceTargetTT, {OpArg[0],
-                                  OpArg[1], Str});
+      IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
   setInsNonSan(ProxyCall);
-
 }
 
 void AngoraLLVMPass::visitTargetInst(Instruction *Inst, std::string location_str) {
