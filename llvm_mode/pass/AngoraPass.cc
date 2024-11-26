@@ -583,31 +583,36 @@ void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, 
         // Remove the unconditional branch auto-inserted at the end of the first block
         OriginalBlock->getTerminator()->eraseFromParent();
 
-        // Add instrumentation after the printf call
-        IRB.SetInsertPoint(OriginalBlock);
-        Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str()); // Line number or location info
+        // Create the loop and exit blocks
+        BasicBlock *LoopBlock = BasicBlock::Create(IRB.getContext(), "printf_loop", OriginalBlock->getParent());
+        BasicBlock *ExitBlock = BasicBlock::Create(IRB.getContext(), "printf_exit", OriginalBlock->getParent());
 
-        for (unsigned i = 1; i < Call->getNumArgOperands(); ++i) {
+        // Move LoopBlock and ExitBlock before SecondBlock
+        LoopBlock->moveBefore(SecondBlock);
+        ExitBlock->moveBefore(SecondBlock);
+
+        // Branch from OriginalBlock to LoopBlock
+        IRB.SetInsertPoint(OriginalBlock);
+        IRB.CreateBr(LoopBlock);
+
+        // Add instrumentation for the location string
+        Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
+
+        // Process each argument to the printf call
+        // For now, just process the first argument
+        // for (unsigned i = 1; i < Call->getNumArgOperands(); ++i) {
+        for (unsigned i = 1; i < 2; ++i) {
             Value *Arg = Call->getArgOperand(i);
 
             if (Arg->getType()->isPointerTy()) {
-                // Start processing the pointer argument
-                Value *BasePtr = IRB.CreatePointerCast(Arg, IRB.getInt8PtrTy());
-                Value *Offset = ConstantInt::get(IRB.getInt32Ty(), 0); // Start with offset 0
-
-                // Create the loop and exit blocks
-                BasicBlock *LoopBlock = BasicBlock::Create(IRB.getContext(), "printf_loop", OriginalBlock->getParent());
-                BasicBlock *ExitBlock = BasicBlock::Create(IRB.getContext(), "printf_exit", OriginalBlock->getParent());
-
-                // Move LoopBlock and ExitBlock before SecondBlock
-                LoopBlock->moveBefore(SecondBlock);
-                ExitBlock->moveBefore(SecondBlock);
-
-                // Branch to the loop block
-                IRB.CreateBr(LoopBlock);
-
-                // Set up the loop block
+                // Set up IRBuilder for the loop block
                 IRBuilder<> LoopBuilder(LoopBlock);
+
+                // Cast pointer argument to i8*
+                Value *BasePtr = IRB.CreatePointerCast(Arg, IRB.getInt8PtrTy());
+                Value *Offset = ConstantInt::get(IRB.getInt32Ty(), 0);
+
+                // PHI node for the offset
                 PHINode *OffsetPhi = LoopBuilder.CreatePHI(IRB.getInt32Ty(), 2);
                 OffsetPhi->addIncoming(Offset, OriginalBlock);
 
@@ -620,21 +625,20 @@ void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, 
                 // Instrument the loaded value
                 LoopBuilder.CreateCall(TraceTargetTT, {Loaded, Loaded, Str});
 
-                // Increment the offset 
+                // Increment the offset
                 Value *NextOffset = LoopBuilder.CreateAdd(OffsetPhi, ConstantInt::get(IRB.getInt32Ty(), 1));
                 OffsetPhi->addIncoming(NextOffset, LoopBlock);
 
                 // Check if we've hit the null terminator
                 Value *IsNull = LoopBuilder.CreateICmpEQ(Loaded, ConstantInt::get(IRB.getInt8Ty(), 0));
                 LoopBuilder.CreateCondBr(IsNull, ExitBlock, LoopBlock);
-
-                // Set up the exit block
-                IRB.SetInsertPoint(ExitBlock);
             }
         }
 
-        // Jump to the second block to continue normal execution
+        // Branch from ExitBlock to SecondBlock
+        IRB.SetInsertPoint(ExitBlock);
         IRB.CreateBr(SecondBlock);
+
         return; // Avoid further processing since we've handled printf
     }
 
@@ -653,6 +657,7 @@ void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, 
     CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
     setInsNonSan(ProxyCall);
 }
+
 
 
 
