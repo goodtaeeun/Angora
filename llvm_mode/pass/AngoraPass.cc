@@ -136,6 +136,7 @@ public:
   void processCmp(Instruction *Cond, Constant *Cid, Instruction *InsertPoint,std::string location_str);
   void visitTargetInst(Instruction *Inst, std::string location_str);
   void processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str);
+  void processPrintfTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str);
   void processBoolCmp(Value *Cond, Constant *Cid, Instruction *InsertPoint,std::string location_str);
   void visitSwitchInst(Module &M, Instruction *Inst,std::string location_str);
   void visitExploitation(Instruction *Inst,std::string location_str);
@@ -571,101 +572,110 @@ void AngoraLLVMPass::visitCmpInst(Instruction *Inst,std::string location_str) {
   processCmp(Inst, Cid, InsertPoint, location_str);
 }
 
+// Default handling for target instructions
 void AngoraLLVMPass::processTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
-    IRBuilder<> IRB(InsertPoint);
+  IRBuilder<> IRB(InsertPoint);
 
-    CallInst *Call = dyn_cast<CallInst>(Inst);
-    if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName() == "printf") {
-        // Split the basic block at the printf call
-        BasicBlock *OriginalBlock = Call->getParent();
-        BasicBlock *SecondBlock = OriginalBlock->splitBasicBlock(Call->getNextNode(), "after_printf");
+  Value *OpArg[2];
+  OpArg[0] = Inst->getOperand(0);
 
-        // Remove the unconditional branch auto-inserted at the end of the first block
-        OriginalBlock->getTerminator()->eraseFromParent();
+  if (Inst->getNumOperands() > 1)
+      OpArg[1] = Inst->getOperand(1);
+  else
+      OpArg[1] = Inst->getOperand(0);
 
-        // Create the loop and exit blocks
-        BasicBlock *LoopBlock = BasicBlock::Create(IRB.getContext(), "printf_loop", OriginalBlock->getParent());
-        BasicBlock *ExitBlock = BasicBlock::Create(IRB.getContext(), "printf_exit", OriginalBlock->getParent());
-
-        // Move LoopBlock and ExitBlock before SecondBlock
-        LoopBlock->moveBefore(SecondBlock);
-        ExitBlock->moveBefore(SecondBlock);
-
-        // Branch from OriginalBlock to LoopBlock
-        IRB.SetInsertPoint(OriginalBlock);
-        IRB.CreateBr(LoopBlock);
-
-        // Add instrumentation for the location string
-        Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
-
-        // Process each argument to the printf call
-        // For now, just process the first argument
-        // for (unsigned i = 1; i < Call->getNumArgOperands(); ++i) {
-        for (unsigned i = 1; i < 2; ++i) {
-            Value *Arg = Call->getArgOperand(i);
-
-            if (Arg->getType()->isPointerTy()) {
-                // Set up IRBuilder for the loop block
-                IRBuilder<> LoopBuilder(LoopBlock);
-
-                // Cast pointer argument to i8*
-                Value *BasePtr = IRB.CreatePointerCast(Arg, IRB.getInt8PtrTy());
-                Value *Offset = ConstantInt::get(IRB.getInt32Ty(), 0);
-
-                // PHI node for the offset
-                PHINode *OffsetPhi = LoopBuilder.CreatePHI(IRB.getInt32Ty(), 2);
-                OffsetPhi->addIncoming(Offset, OriginalBlock);
-
-                // Compute the address at the current offset
-                Value *CurAddr = LoopBuilder.CreateGEP(IRB.getInt8Ty(), BasePtr, OffsetPhi);
-
-                // Load the byte at the current offset
-                Value *Loaded = LoopBuilder.CreateLoad(IRB.getInt8Ty(), CurAddr);
-
-                // Instrument the loaded value
-                LoopBuilder.CreateCall(TraceTargetTT, {Loaded, Loaded, Str});
-
-                // Increment the offset
-                Value *NextOffset = LoopBuilder.CreateAdd(OffsetPhi, ConstantInt::get(IRB.getInt32Ty(), 1));
-                OffsetPhi->addIncoming(NextOffset, LoopBlock);
-
-                // Check if we've hit the null terminator
-                Value *IsNull = LoopBuilder.CreateICmpEQ(Loaded, ConstantInt::get(IRB.getInt8Ty(), 0));
-                LoopBuilder.CreateCondBr(IsNull, ExitBlock, LoopBlock);
-            }
-        }
-
-        // Branch from ExitBlock to SecondBlock
-        IRB.SetInsertPoint(ExitBlock);
-        IRB.CreateBr(SecondBlock);
-
-        return; // Avoid further processing since we've handled printf
-    }
-
-    // Default handling for other instructions
-    Value *OpArg[2];
-    OpArg[0] = Inst->getOperand(0);
-
-    if (Inst->getNumOperands() > 1)
-        OpArg[1] = Inst->getOperand(1);
-    else
-        OpArg[1] = Inst->getOperand(0);
-
-    OpArg[0] = castArgType(IRB, OpArg[0]);
-    OpArg[1] = castArgType(IRB, OpArg[1]);
-    Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
-    CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
-    setInsNonSan(ProxyCall);
+  OpArg[0] = castArgType(IRB, OpArg[0]);
+  OpArg[1] = castArgType(IRB, OpArg[1]);
+  Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
+  CallInst *ProxyCall = IRB.CreateCall(TraceTargetTT, {OpArg[0], OpArg[1], Str});
+  setInsNonSan(ProxyCall);
 }
 
+void AngoraLLVMPass::processPrintfTarget(Instruction *Inst, Instruction *InsertPoint, std::string location_str) {
+  IRBuilder<> IRB(InsertPoint);
 
+  CallInst *Call = dyn_cast<CallInst>(Inst);
+
+  // Split the basic block at the printf call
+  BasicBlock *OriginalBlock = Call->getParent();
+  BasicBlock *SecondBlock = OriginalBlock->splitBasicBlock(Call->getNextNode(), "after_printf");
+
+  // Remove the unconditional branch auto-inserted at the end of the first block
+  OriginalBlock->getTerminator()->eraseFromParent();
+
+  // Create the loop and exit blocks
+  BasicBlock *LoopBlock = BasicBlock::Create(IRB.getContext(), "printf_loop", OriginalBlock->getParent());
+  BasicBlock *ExitBlock = BasicBlock::Create(IRB.getContext(), "printf_exit", OriginalBlock->getParent());
+
+  // Move LoopBlock and ExitBlock before SecondBlock
+  LoopBlock->moveBefore(SecondBlock);
+  ExitBlock->moveBefore(SecondBlock);
+
+  // Branch from OriginalBlock to LoopBlock
+  IRB.SetInsertPoint(OriginalBlock);
+  IRB.CreateBr(LoopBlock);
+
+  // Add instrumentation for the location string
+  Value *Str = IRB.CreateGlobalStringPtr(location_str.c_str());
+
+  // Process each argument to the printf call
+  // For now, just process the first argument
+  // for (unsigned i = 1; i < Call->getNumArgOperands(); ++i) {
+  for (unsigned i = 1; i < 2; ++i) {
+      Value *Arg = Call->getArgOperand(i);
+
+      if (Arg->getType()->isPointerTy()) {
+          // Set up IRBuilder for the loop block
+          IRBuilder<> LoopBuilder(LoopBlock);
+
+          // Cast pointer argument to i8*
+          Value *BasePtr = IRB.CreatePointerCast(Arg, IRB.getInt8PtrTy());
+          Value *Offset = ConstantInt::get(IRB.getInt32Ty(), 0);
+
+          // PHI node for the offset
+          PHINode *OffsetPhi = LoopBuilder.CreatePHI(IRB.getInt32Ty(), 2);
+          OffsetPhi->addIncoming(Offset, OriginalBlock);
+
+          // Compute the address at the current offset
+          Value *CurAddr = LoopBuilder.CreateGEP(IRB.getInt8Ty(), BasePtr, OffsetPhi);
+
+          // Load the byte at the current offset
+          Value *Loaded = LoopBuilder.CreateLoad(IRB.getInt8Ty(), CurAddr);
+
+          // Instrument the loaded value
+          LoopBuilder.CreateCall(TraceTargetTT, {Loaded, Loaded, Str});
+
+          // Increment the offset
+          Value *NextOffset = LoopBuilder.CreateAdd(OffsetPhi, ConstantInt::get(IRB.getInt32Ty(), 1));
+          OffsetPhi->addIncoming(NextOffset, LoopBlock);
+
+          // Check if we've hit the null terminator
+          Value *IsNull = LoopBuilder.CreateICmpEQ(Loaded, ConstantInt::get(IRB.getInt8Ty(), 0));
+          LoopBuilder.CreateCondBr(IsNull, ExitBlock, LoopBlock);
+      }
+  }
+
+  // Branch from ExitBlock to SecondBlock
+  IRB.SetInsertPoint(ExitBlock);
+  IRB.CreateBr(SecondBlock);
+
+  return;
+}
 
 
 void AngoraLLVMPass::visitTargetInst(Instruction *Inst, std::string location_str) {
   Instruction *InsertPoint = Inst->getNextNode();
   if (!InsertPoint || isa<ConstantInt>(Inst))
     return;
-  // Constant *Cid = ConstantInt::get(Int32Ty, getInstructionId(Inst));
+  
+  if (isa<CallInst>(Inst)) {
+    CallInst *Call = dyn_cast<CallInst>(Inst);
+    if (Call->getCalledFunction() && Call->getCalledFunction()->getName() == "printf") {
+      processPrintfTarget(Inst, InsertPoint, location_str);
+      return;
+    }
+  }
+  
   processTarget(Inst, InsertPoint, location_str);
 }
 
@@ -830,6 +840,10 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
       for (auto inst = inst_list.begin(); inst != inst_list.end(); inst++) {
         Instruction *Inst = *inst;
 
+        // Get the line number of the instruction.
+        DebugLoc dbg = (*inst)->getDebugLoc();
+        DILocation* DILoc = dbg.get();
+
         // Check and skip the LLVM intrinsic instructions.
         if (auto *II = dyn_cast<IntrinsicInst>(Inst)) {
             if (II->getIntrinsicID() == Intrinsic::dbg_declare) {
@@ -837,18 +851,16 @@ bool AngoraLLVMPass::runOnModule(Module &M) {
             }
         }
         // Skip PHI instructions
-        if (isa<PHINode>(Inst)) {
+        else if (isa<PHINode>(Inst)) {
             continue;
         }
         // Skip instructions with no metadata
-        if (Inst->getMetadata(NoSanMetaId))
+        else if (Inst->getMetadata(NoSanMetaId))
           continue;
-        
-        // Get the line number of the instruction.
-        DebugLoc dbg = (*inst)->getDebugLoc();
-        DILocation* DILoc = dbg.get();
-        if (!DILoc || !DILoc->getLine()) 
+        // Skip instructions with no debug location
+        else if (!DILoc || !DILoc->getLine()) 
           continue; 
+
         std::string line_str = std::to_string(DILoc->getLine());
         std::string location_str = file_name + std::string(":") + line_str;
 
